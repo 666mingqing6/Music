@@ -79,8 +79,7 @@ class MetingJSElement extends HTMLElement {
         artist: item.artist,
         url: this._encodeNonAscii(item.url),
         cover: this._encodeNonAscii(item.cover),
-        lrc: this._encodeNonAscii(item.lrc),
-        type: 'local'
+        lrc: this._encodeNonAscii(item.lrc)
       }));
     }
 
@@ -153,8 +152,7 @@ class MetingJSElement extends HTMLElement {
           artist: item.artist,
           url: this._encodeNonAscii(item.url),
           cover: this._encodeNonAscii(item.cover),
-          lrc: this._encodeNonAscii(item.lrc),
-          type: 'local'
+          lrc: this._encodeNonAscii(item.lrc)
         }));
         if (localData.length) {
           this._loadPlayer(localData);
