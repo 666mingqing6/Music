@@ -72,6 +72,18 @@ class MetingJSElement extends HTMLElement {
   }
 
   _parse() {
+    let localData = [];
+    if (typeof localMusic !== 'undefined' && Array.isArray(localMusic)) {
+      localData = localMusic.map(item => ({
+        name: item.name,
+        artist: item.artist,
+        url: this._encodeNonAscii(item.url),
+        cover: this._encodeNonAscii(item.cover),
+        lrc: this._encodeNonAscii(item.lrc),
+        type: 'local'
+      }));
+    }
+
     if (this.meta.url) {
       let result = {
         name: this.meta.name || this.meta.title || 'Audio name',
@@ -88,7 +100,7 @@ class MetingJSElement extends HTMLElement {
         result.lrc = this.innerText
         this.meta.lrcType = 2
       }
-      this._loadPlayer([result])
+      this._loadPlayer([...localData, result])
       return
     }
 
@@ -101,7 +113,26 @@ class MetingJSElement extends HTMLElement {
 
     fetch(url)
       .then(res => res.json())
-      .then(result => this._loadPlayer(result))
+      .then(result => {
+        // 过滤掉无效结果并合并
+        const validOnlineResult = Array.isArray(result) ? result : [];
+        const combinedData = [...localData, ...validOnlineResult];
+        this._loadPlayer(combinedData);
+      })
+      .catch(err => {
+        console.error('Fetch online music error:', err);
+        // 如果在线音乐获取失败，仍然加载本地音乐
+        if (localData.length > 0) {
+          this._loadPlayer(localData);
+        }
+      });
+  }
+
+  _encodeNonAscii(str) {
+    if (!str) return str;
+    return str.replace(/[^\x00-\x7F]/g, function(c) {
+      return encodeURIComponent(c);
+    });
   }
 
   _loadPlayer(data) {
@@ -114,7 +145,24 @@ class MetingJSElement extends HTMLElement {
       listFolded: window.innerWidth < 768 ? true : false
     }
 
-    if (!data.length) return
+    if (!data || !data.length) {
+      if (typeof localMusic !== 'undefined' && Array.isArray(localMusic) && data !== localMusic) {
+        // 如果在线音乐返回空，尝试只加载本地音乐
+        let localData = localMusic.map(item => ({
+          name: item.name,
+          artist: item.artist,
+          url: this._encodeNonAscii(item.url),
+          cover: this._encodeNonAscii(item.cover),
+          lrc: this._encodeNonAscii(item.lrc),
+          type: 'local'
+        }));
+        if (localData.length) {
+          this._loadPlayer(localData);
+          return;
+        }
+      }
+      return;
+    }
 
     let options = {
       ...defaultOption,
