@@ -53,5 +53,33 @@ var localMusic = [
     url: 'https://tu.646474.xyz/%E6%B8%B8%E4%BA%AC_%E6%88%91%E9%97%BB%E7%9D%80%E9%A5%BC%E9%A6%99.mp3',
     cover: 'https://tu.646474.xyz/%E6%B8%B8%E4%BA%AC_%E6%88%91%E9%97%BB%E7%9D%80%E9%A5%BC%E9%A6%99.jpg',
     lrc: 'https://tu.646474.xyz/%E6%B8%B8%E4%BA%AC_%E6%88%91%E9%97%BB%E7%9D%80%E9%A5%BC%E9%A6%99.lrc'
+  },
+  {
+    name: 'Ice On My Baby (sped-up)',
+    artist: 'Yung Bleu',
+    url: 'https://tu.646474.xyz/Ice%20On%20My%20Baby%20_sped-up.mp3',
+    cover: 'https://tu.646474.xyz/Ice%20On%20My%20Baby%20_sped-up.jpg',
+    lrc: 'https://tu.646474.xyz/Ice%20On%20My%20Baby%20_sped-up.lrc'
+  },
+  {
+    name: '春庭雪 (0.9x版DJ Wave版)',
+    artist: '邓寓君(等什么君)',
+    url: 'https://tu.646474.xyz/%E9%82%93%E5%AF%93%E5%90%9B_%E7%AD%89%E4%BB%80%E4%B9%88%E5%90%9B_%20-%20%E6%98%A5%E5%BA%AD%E9%9B%AA%20_0.mp3',
+    cover: 'https://tu.646474.xyz/%E9%82%93%E5%AF%93%E5%90%9B_%E7%AD%89%E4%BB%80%E4%B9%88%E5%90%9B_%20-%20%E6%98%A5%E5%BA%AD%E9%9B%AA%20_0.jpg',
+    lrc: 'https://tu.646474.xyz/%E9%82%93%E5%AF%93%E5%90%9B_%E7%AD%89%E4%BB%80%E4%B9%88%E5%90%9B_%20-%20%E6%98%A5%E5%BA%AD%E9%9B%AA%20_0.lrc'
+  },
+  {
+    name: '辞九门回忆+莫问归期dj',
+    artist: 'DJ阿玄',
+    url: 'https://tu.646474.xyz/%E8%BE%9E%E4%B9%9D%E9%97%A8%E5%9B%9E%E5%BF%86_%E8%8E%AB%E9%97%AE%E5%BD%92%E6%9C%9F.mp3',
+    cover: 'https://tu.646474.xyz/%E8%BE%9E%E4%B9%9D%E9%97%A8%E5%9B%9E%E5%BF%86_%E8%8E%AB%E9%97%AE%E5%BD%92%E6%9C%9F.jpg',
+    lrc: 'https://tu.646474.xyz/%E8%BE%9E%E4%B9%9D%E9%97%A8%E5%9B%9E%E5%BF%86_%E8%8E%AB%E9%97%AE%E5%BD%92%E6%9C%9F.lrc'
+  },
+  {
+    name: '青衣 (DJ阿泽版)',
+    artist: '草帽酱, DJ阿泽',
+    url: 'https://tu.646474.xyz/%E9%9D%92%E8%A1%A3%20_DJ%E9%98%BF%E6%B3%BD%E7%89%88.mp3',
+    cover: 'https://tu.646474.xyz/%E9%9D%92%E8%A1%A3%20_DJ%E9%98%BF%E6%B3%BD%E7%89%88.jpg',
+    lrc: ''
   }
 ];
