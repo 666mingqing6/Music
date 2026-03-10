@@ -24,7 +24,7 @@ var localMusic = [
     artist: '一颗狼星',
     url: 'https://tu.646474.xyz/1772844561679.flac',
     cover: 'https://tu.646474.xyz/1772844819459.jpg',
-    lrc: '纯音乐，请欣赏'
+    lrc: 'https://tu.646474.xyz/%E7%BA%AF%E9%9F%B3%E4%B9%90.lrc'
   },
   {
     name: 'Bleeding Love',
@@ -63,7 +63,7 @@ var localMusic = [
   },
   {
     name: '春庭雪 (0.9x版DJ Wave版)',
-    artist: '邓寓君(等什么君)',
+    artist: '等什么君',
     url: 'https://tu.646474.xyz/%E9%82%93%E5%AF%93%E5%90%9B_%E7%AD%89%E4%BB%80%E4%B9%88%E5%90%9B_%20-%20%E6%98%A5%E5%BA%AD%E9%9B%AA%20_0.mp3',
     cover: 'https://tu.646474.xyz/%E9%82%93%E5%AF%93%E5%90%9B_%E7%AD%89%E4%BB%80%E4%B9%88%E5%90%9B_%20-%20%E6%98%A5%E5%BA%AD%E9%9B%AA%20_0.jpg',
     lrc: 'https://tu.646474.xyz/%E9%82%93%E5%AF%93%E5%90%9B_%E7%AD%89%E4%BB%80%E4%B9%88%E5%90%9B_%20-%20%E6%98%A5%E5%BA%AD%E9%9B%AA%20_0.lrc'
@@ -80,6 +80,13 @@ var localMusic = [
     artist: '草帽酱, DJ阿泽',
     url: 'https://tu.646474.xyz/%E9%9D%92%E8%A1%A3%20_DJ%E9%98%BF%E6%B3%BD%E7%89%88.mp3',
     cover: 'https://tu.646474.xyz/%E9%9D%92%E8%A1%A3%20_DJ%E9%98%BF%E6%B3%BD%E7%89%88.jpg',
-    lrc: ''
+    lrc: 'https://tu.646474.xyz/%E9%9D%92%E8%A1%A3.lrc'
+  },
+  {
+    name: '天亮以前说再见DJ 0.74x(保尔柯察金进行曲)',
+    artist: '云野',
+    url: 'https://tu.646474.xyz/%E5%A4%A9%E4%BA%AE%E4%BB%A5%E5%89%8D%E8%AF%B4%E5%86%8D%E8%A7%81.mp3',
+    cover: 'https://tu.646474.xyz/%E5%A4%A9%E4%BA%AE%E4%BB%A5%E5%89%8D%E8%AF%B4%E5%86%8D%E8%A7%81.jpg',
+    lrc: 'https://tu.646474.xyz/%E5%A4%A9%E4%BA%AE%E4%BB%A5%E5%89%8D%E8%AF%B4%E5%86%8D%E8%A7%81.lrc'
   }
 ];
