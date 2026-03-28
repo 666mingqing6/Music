@@ -88,5 +88,40 @@ var localMusic = [
     url: 'https://tu.646474.xyz/%E5%A4%A9%E4%BA%AE%E4%BB%A5%E5%89%8D%E8%AF%B4%E5%86%8D%E8%A7%81.mp3',
     cover: 'https://tu.646474.xyz/%E5%A4%A9%E4%BA%AE%E4%BB%A5%E5%89%8D%E8%AF%B4%E5%86%8D%E8%A7%81.jpg',
     lrc: 'https://tu.646474.xyz/%E5%A4%A9%E4%BA%AE%E4%BB%A5%E5%89%8D%E8%AF%B4%E5%86%8D%E8%A7%81.lrc'
+  },
+  {
+    name: '唐人恋曲',
+    artist: '小唐人',
+    url: 'https://tu.646474.xyz/%E5%94%90%E4%BA%BA%E6%81%8B%E6%9B%B2.mp3',
+    cover: 'https://tu.646474.xyz/%E5%94%90%E4%BA%BA%E6%81%8B%E6%9B%B2.webp',
+    lrc: 'https://tu.646474.xyz/%E5%94%90%E4%BA%BA%E6%81%8B%E6%9B%B2.lrc'
+  },
+  {
+    name: '复兴小曲-游山恋(琪大妈)',
+    artist: '琪大妈',
+    url: 'https://tu.646474.xyz/%E5%A4%8D%E5%85%B4%E5%B0%8F%E6%9B%B2.mp3',
+    cover: 'https://tu.646474.xyz/%E5%A4%8D%E5%85%B4%E5%B0%8F%E6%9B%B2.jpg',
+    lrc: 'https://tu.646474.xyz/%E5%A4%8D%E5%85%B4%E5%B0%8F%E6%9B%B2.lrc'
+  },
+  {
+    name: '下潜',
+    artist: '川青',
+    url: 'https://tu.646474.xyz/%E4%B8%8B%E6%BD%9C.mp3',
+    cover: 'https://tu.646474.xyz/%E4%B8%8B%E6%BD%9C.jpg',
+    lrc: 'https://tu.646474.xyz/%E4%B8%8B%E6%BD%9C.lrc'
+  },
+  {
+    name: '潮汐',
+    artist: 'IN-K, 安苏羽, 傅梦彤',
+    url: 'https://tu.646474.xyz/%E6%BD%AE%E6%B1%90.mp3',
+    cover: 'https://tu.646474.xyz/%E6%BD%AE%E6%B1%90.jpg',
+    lrc: 'https://tu.646474.xyz/%E6%BD%AE%E6%B1%90.lrc'
+  },
+  {
+    name: '潮汐',
+    artist: '傅梦彤',
+    url: 'https://tu.646474.xyz/%E6%BD%AE%E6%B1%90-%E5%82%85%E6%A2%A6%E5%BD%A4.mp3',
+    cover: 'https://tu.646474.xyz/%E6%BD%AE%E6%B1%90-%E5%82%85%E6%A2%A6%E5%BD%A4.jpg',
+    lrc: 'https://tu.646474.xyz/%E6%BD%AE%E6%B1%90-%E5%82%85%E6%A2%A6%E5%BD%A4.lrc'
   }
-];
+]
