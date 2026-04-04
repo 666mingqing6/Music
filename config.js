@@ -123,5 +123,12 @@ var localMusic = [
     url: 'https://tu.646474.xyz/%E6%BD%AE%E6%B1%90-%E5%82%85%E6%A2%A6%E5%BD%A4.mp3',
     cover: 'https://tu.646474.xyz/%E6%BD%AE%E6%B1%90-%E5%82%85%E6%A2%A6%E5%BD%A4.jpg',
     lrc: 'https://tu.646474.xyz/%E6%BD%AE%E6%B1%90-%E5%82%85%E6%A2%A6%E5%BD%A4.lrc'
+  },
+  {
+    name: '夫妻双双把家还 天仙配',
+    artist: '李文, 瑞鸣音乐',
+    url: 'https://tu.646474.xyz/%E5%A4%AB%E5%A6%BB%E5%8F%8C%E5%8F%8C%E6%8A%8A%E5%AE%B6%E8%BF%98.mp3',
+    cover: 'https://tu.646474.xyz/%E5%A4%AB%E5%A6%BB%E5%8F%8C%E5%8F%8C%E6%8A%8A%E5%AE%B6%E8%BF%98.jpg',
+    lrc: 'https://tu.646474.xyz/%E5%A4%AB%E5%A6%BB%E5%8F%8C%E5%8F%8C%E6%8A%8A%E5%AE%B6%E8%BF%98.lrc'
   }
 ]
