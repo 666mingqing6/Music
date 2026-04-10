@@ -130,5 +130,12 @@ var localMusic = [
     url: 'https://tu.646474.xyz/%E5%A4%AB%E5%A6%BB%E5%8F%8C%E5%8F%8C%E6%8A%8A%E5%AE%B6%E8%BF%98.mp3',
     cover: 'https://tu.646474.xyz/%E5%A4%AB%E5%A6%BB%E5%8F%8C%E5%8F%8C%E6%8A%8A%E5%AE%B6%E8%BF%98.jpg',
     lrc: 'https://tu.646474.xyz/%E5%A4%AB%E5%A6%BB%E5%8F%8C%E5%8F%8C%E6%8A%8A%E5%AE%B6%E8%BF%98.lrc'
+  },
+  {
+    name: '好想爱这个世界啊',
+    artist: '蓝心羽',
+    url: 'https://tu.646474.xyz/%E5%A5%BD%E6%83%B3%E7%88%B1%E8%BF%99%E4%B8%AA%E4%B8%96%E7%95%8C%E5%95%8A.mp3',
+    cover: 'https://tu.646474.xyz/%E5%A5%BD%E6%83%B3%E7%88%B1%E8%BF%99%E4%B8%AA%E4%B8%96%E7%95%8C%E5%95%8A.png',
+    lrc: 'https://tu.646474.xyz/%E5%A5%BD%E6%83%B3%E7%88%B1%E8%BF%99%E4%B8%AA%E4%B8%96%E7%95%8C%E5%95%8A.lrc'
   }
 ]
