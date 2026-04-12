@@ -137,5 +137,33 @@ var localMusic = [
     url: 'https://tu.646474.xyz/%E5%A5%BD%E6%83%B3%E7%88%B1%E8%BF%99%E4%B8%AA%E4%B8%96%E7%95%8C%E5%95%8A.mp3',
     cover: 'https://tu.646474.xyz/%E5%A5%BD%E6%83%B3%E7%88%B1%E8%BF%99%E4%B8%AA%E4%B8%96%E7%95%8C%E5%95%8A.png',
     lrc: 'https://tu.646474.xyz/%E5%A5%BD%E6%83%B3%E7%88%B1%E8%BF%99%E4%B8%AA%E4%B8%96%E7%95%8C%E5%95%8A.lrc'
+  },
+  {
+    name: '最后一页',
+    artist: '江语晨',
+    url: 'https://tu.646474.xyz/%E6%9C%80%E5%90%8E%E4%B8%80%E9%A1%B5.mp3',
+    cover: 'https://tu.646474.xyz/%E6%9C%80%E5%90%8E%E4%B8%80%E9%A1%B5.jpg',
+    lrc: 'https://tu.646474.xyz/%E6%9C%80%E5%90%8E%E4%B8%80%E9%A1%B5.lrc'
+  },
+  {
+    name: '怎叹',
+    artist: '郑鱼',
+    url: 'https://tu.646474.xyz/%E6%80%8E%E5%8F%B9.mp3',
+    cover: 'https://tu.646474.xyz/%E6%80%8E%E5%8F%B9.jpg',
+    lrc: 'https://tu.646474.xyz/%E6%80%8E%E5%8F%B9.lrc'
+  },
+  {
+    name: '隔岸',
+    artist: '姚十六',
+    url: 'https://tu.646474.xyz/%E9%9A%94%E5%B2%B8.mp3',
+    cover: 'https://tu.646474.xyz/%E9%9A%94%E5%B2%B8.jpg',
+    lrc: 'https://tu.646474.xyz/%E9%9A%94%E5%B2%B8.lrc'
+  },
+  {
+    name: '烟袋斜街',
+    artist: '接个吻，开一枪, SaMZIng',
+    url: 'https://tu.646474.xyz/%E7%83%9F%E8%A2%8B%E6%96%9C%E8%A1%97.mp3',
+    cover: 'https://tu.646474.xyz/%E7%83%9F%E8%A2%8B%E6%96%9C%E8%A1%97.jpg',
+    lrc: 'https://tu.646474.xyz/%E7%83%9F%E8%A2%8B%E6%96%9C%E8%A1%97.lrc'
   }
 ]
