@@ -165,5 +165,12 @@ var localMusic = [
     url: 'https://tu.646474.xyz/%E7%83%9F%E8%A2%8B%E6%96%9C%E8%A1%97.mp3',
     cover: 'https://tu.646474.xyz/%E7%83%9F%E8%A2%8B%E6%96%9C%E8%A1%97.jpg',
     lrc: 'https://tu.646474.xyz/%E7%83%9F%E8%A2%8B%E6%96%9C%E8%A1%97.lrc'
+  },
+  {
+    name: '落了白',
+    artist: '蒋雪儿Snow.J',
+    url: 'https://tu.646474.xyz/%E8%90%BD%E4%BA%86%E7%99%BD.mp3',
+    cover: 'https://tu.646474.xyz/%E8%90%BD%E4%BA%86%E7%99%BD.jpg',
+    lrc: 'https://tu.646474.xyz/%E8%90%BD%E4%BA%86%E7%99%BD.lrc'
   }
 ]
