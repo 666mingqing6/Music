@@ -1,4 +1,4 @@
-console.log("\n %c HeoMusic 开源静态音乐播放器 %c https://github.com/zhheo/HeoMusic \n", "color: #fadfa3; background: #030307; padding:5px 0;", "background: #fadfa3; padding:5px 0;")
+console.log("\n %c MQ's Music 开源静态音乐站 %c https://github.com/zhheo/HeoMusic \n", "color: #fadfa3; background: #030307; padding:5px 0;", "background: #fadfa3; padding:5px 0;")
 var local = false;
 var isScrolling = false; // 添加全局变量 isScrolling，默认为 false
 var scrollTimer = null; // 添加定时器变量
@@ -168,7 +168,7 @@ var heo = {
       console.log("获取到自定义内容")
       var id = params.get("id")
       var server = params.get("server")
-      heoMusicPage.innerHTML = `<meting-js id="${id}" server="${server}" type="${playlistType}" mutex="true" preload="auto" order="random"></meting-js>`;
+        heoMusicPage.innerHTML = `<meting-js id="${id}" server="${server}" type="${playlistType}" mutex="true" preload="auto" order="random"></meting-js>`;
     } else {
       console.log("无自定义内容")
       heoMusicPage.innerHTML = `<meting-js id="${userId}" server="${userServer}" type="${userType}" mutex="true" preload="auto" order="random"></meting-js>`;
@@ -238,7 +238,8 @@ var heo = {
   setMediaMetadata: function (aplayerObj, isSongPlaying) {
     const audio = aplayerObj.list.audios[aplayerObj.list.index]
     const coverUrl = audio.cover || './img/icon.webp';
-    const currentLrcContent = document.getElementById("heoMusic-page").querySelector(".aplayer-lrc-current").textContent;
+    const lrcElement = document.getElementById("heoMusic-page").querySelector(".aplayer-lrc-current");
+    const currentLrcContent = lrcElement ? lrcElement.textContent : "";
     let songName, songArtist;
 
     if ('mediaSession' in navigator) {
@@ -373,6 +374,7 @@ var heo = {
 
 //空格控制音乐
 document.addEventListener("keydown", function (event) {
+  if (typeof ap === 'undefined') return;
   //暂停开启音乐
   if (event.code === "Space") {
     event.preventDefault();
@@ -411,6 +413,7 @@ document.addEventListener("keydown", function (event) {
 
 // 监听窗口大小变化
 window.addEventListener('resize', function() {
+  if (typeof ap === 'undefined') return;
   if (window.innerWidth > 768) {
     ap.list.show();
   } else {
