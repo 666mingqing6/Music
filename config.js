@@ -172,5 +172,12 @@ var localMusic = [
     url: 'https://tu.646474.xyz/%E8%90%BD%E4%BA%86%E7%99%BD.mp3',
     cover: 'https://tu.646474.xyz/%E8%90%BD%E4%BA%86%E7%99%BD.jpg',
     lrc: 'https://tu.646474.xyz/%E8%90%BD%E4%BA%86%E7%99%BD.lrc'
+  },
+  {
+    name: '燕无歇',
+    artist: '蒋雪儿Snow.J',
+    url: 'https://tu.646474.xyz/%E7%87%95%E6%97%A0%E6%AD%87.mp3',
+    cover: 'https://tu.646474.xyz/%E7%87%95%E6%97%A0%E6%AD%87.jpg',
+    lrc: 'https://tu.646474.xyz/%E7%87%95%E6%97%A0%E6%AD%87.lrc'
   }
 ]
