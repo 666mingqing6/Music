@@ -364,6 +364,11 @@ class MusicPlayer {
     async loadTrack(index, autoPlay = false) {
         if (index < 0 || index >= this.playlist.length) return;
         
+        // 记录旧歌曲索引到播放历史（prev 回溯用），不重复入栈
+        if (this.playHistory.length === 0 || this.playHistory[this.playHistory.length - 1] !== this.currentIndex) {
+            this.playHistory.push(this.currentIndex);
+        }
+        
         this.currentIndex = index;
         const track = this.playlist[index];
         
@@ -394,12 +399,6 @@ class MusicPlayer {
         // 记录播放次数（平均随机用）
         this.playCount[index] = (this.playCount[index] || 0) + 1;
         this._savePlayCount();
-        
-        // 将当前索引推入播放历史（prev 回溯用）
-        // 避免连续相同索引重复入栈
-        if (this.playHistory.length === 0 || this.playHistory[this.playHistory.length - 1] !== index) {
-            this.playHistory.push(index);
-        }
         
         // 播放状态
         this.els.coverContainer.classList.toggle('playing', false);
