@@ -33,16 +33,7 @@ class MusicPlayer {
         this.playCount = this._loadPlayCount();
         
         // API
-        // API — 部署后替换为你的 Cloudflare Worker 域名
-        // 运行 wrangler deploy 后会得到类似 https://meting-api.xxx.workers.dev 的地址
-        // API 源配置（按优先级排列）
-        this.apiSources = [
-            { name: '公益API', url: 'https://api.injahow.cn/meting/?server=:server&type=:type&id=:id&r=:r' },
-            { name: '自建API', url: 'https://meting-api.646474.xyz/?server=:server&type=:type&id=:id&r=:r' }
-        ];
-        // 从 localStorage 读取上次选择的 API，默认用公益 API（速度更快）
-        this.currentApiIndex = parseInt(localStorage.getItem('mq_api_index') || '0');
-        this.currentApiIndex = Math.min(this.currentApiIndex, this.apiSources.length - 1);
+        this.apiUrl = 'https://meting-api.646474.xyz/?server=:server&type=:type&id=:id&r=:r';
         
         // DOM 元素缓存
         this.els = {};
@@ -65,13 +56,11 @@ class MusicPlayer {
         
         try {
             await this.loadPlaylist();
-            // 先渲染界面并播放，封面后台懒加载
             this.renderQueue();
             if (this.playlist.length > 0) {
                 const randomIndex = Math.floor(Math.random() * this.playlist.length);
                 this.loadTrack(randomIndex, true);
             }
-            // 封面后台慢慢加载，不阻塞用户
             this.resolveAllCovers();
         } catch (error) {
             console.error('初始化失败:', error);
@@ -224,11 +213,7 @@ class MusicPlayer {
             });
         }
         
-        // API 切换按钮
-        const btnSwitchApi = document.getElementById('btn-switch-api');
-        if (btnSwitchApi) {
-            btnSwitchApi.onclick = () => this.switchApi();
-        }
+
         
         // 移动端导航
         document.querySelectorAll('.nav-btn').forEach(btn => {
@@ -282,85 +267,35 @@ class MusicPlayer {
     async loadPlaylist() {
         const localData = typeof localMusic !== 'undefined' ? localMusic : [];
         
-        // 按优先级排列：当前选择的 API 排第一，其余作为备选
-        const orderedSources = [
-            this.apiSources[this.currentApiIndex],
-            ...this.apiSources.filter((_, i) => i !== this.currentApiIndex)
-        ];
-        
-        for (const source of orderedSources) {
-            try {
-                const url = source.url
-                    .replace(':server', typeof userServer !== 'undefined' ? userServer : 'netease')
-                    .replace(':type', typeof userType !== 'undefined' ? userType : 'playlist')
-                    .replace(':id', typeof userId !== 'undefined' ? userId : '12675886878')
-                    .replace(':r', Math.random());
-                
-                console.log('尝试 API [' + source.name + ']:', url);
-                
-                const controller = new AbortController();
-                const timer = setTimeout(() => controller.abort(), 5000);
-                const response = await fetch(url, { signal: controller.signal });
-                clearTimeout(timer);
-                
-                if (!response.ok) continue;
-                
+        try {
+            const url = this.apiUrl
+                .replace(':server', typeof userServer !== 'undefined' ? userServer : 'netease')
+                .replace(':type', typeof userType !== 'undefined' ? userType : 'playlist')
+                .replace(':id', typeof userId !== 'undefined' ? userId : '12675886878')
+                .replace(':r', Math.random());
+            
+            console.log('请求 API:', url);
+            
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 8000);
+            const response = await fetch(url, { signal: controller.signal });
+            clearTimeout(timer);
+            
+            if (response.ok) {
                 const onlineData = await response.json();
-                
                 if (Array.isArray(onlineData) && onlineData.length > 0) {
-                    console.log(source.name + ' 成功，获取到', onlineData.length, '首歌曲');
+                    console.log('API 成功，获取到', onlineData.length, '首歌曲');
                     this.playlist = [...localData, ...onlineData];
-                    this.updateApiBadge(source.name);
                     return;
                 }
-                
-                if (onlineData && onlineData.message) {
-                    console.warn(source.name + ' 返回错误:', onlineData.message);
-                    continue;
-                }
-            } catch (error) {
-                console.warn(source.name + ' 请求失败:', error.message);
-                continue;
             }
+        } catch (error) {
+            console.warn('API 请求失败:', error.message);
         }
         
-        // 所有 API 都失败，只使用本地音乐
-        console.log('所有在线 API 都失败，仅使用本地音乐');
+        // API 失败，仅使用本地音乐
+        console.log('API 不可用，仅使用本地音乐');
         this.playlist = localData;
-        this.updateApiBadge('仅本地');
-    }
-    
-    // 切换 API 并重新加载
-    async switchApi() {
-        this.currentApiIndex = (this.currentApiIndex + 1) % this.apiSources.length;
-        localStorage.setItem('mq_api_index', this.currentApiIndex);
-        const name = this.apiSources[this.currentApiIndex].name;
-        console.log('切换到', name);
-        
-        try {
-            this.coverUrlCache.clear();
-            this.coverCache.clear();
-            this.pause();
-            await this.loadPlaylist();
-            this.renderQueue();
-            if (this.playlist.length > 0) {
-                this.loadTrack(0, true);
-            }
-            this.resolveAllCovers();
-        } catch (e) {
-            console.error('切换 API 失败:', e);
-        }
-    }
-    
-    // 更新 API 状态标签
-    updateApiBadge(name) {
-        const badge = document.getElementById('api-badge');
-        if (badge) {
-            badge.textContent = name;
-            // 不同 API 用不同颜色：公益=蓝，自建=红，仅本地=黄
-            const colorClass = name === '公益API' ? 'api-gongyi' : name === '自建API' ? 'api-zijian' : 'offline';
-            badge.className = 'api-badge ' + colorClass;
-        }
     }
     
     async loadTrack(index, autoPlay = false) {

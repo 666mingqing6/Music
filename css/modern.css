@@ -635,37 +635,7 @@ input[type="range"] {
     flex-shrink: 0;
 }
 
-#btn-switch-api {
-    margin-left: auto;
-    gap: 5px;
-}
 
-#btn-switch-api i {
-    font-size: 0.75rem;
-}
-
-.api-badge {
-    font-size: 0.7rem;
-    font-weight: 600;
-    padding: 2px 7px;
-    border-radius: var(--radius-full);
-    letter-spacing: 0.02em;
-}
-
-.api-badge.api-gongyi {
-    color: #3b82f6;
-    background: rgba(59, 130, 246, 0.12);
-}
-
-.api-badge.api-zijian {
-    color: #ef4444;
-    background: rgba(239, 68, 68, 0.12);
-}
-
-.api-badge.offline {
-    color: #f59e0b;
-    background: rgba(245, 158, 11, 0.12);
-}
 
 .panel-tab {
     display: flex;
