@@ -148,8 +148,8 @@ class MusicPlayer {
         };
     }
     
-    // GD Studio API 基础地址
-    static get GD_API() { return 'https://music-api.gdstudio.xyz/api.php'; }
+    // GD Studio API 基础地址（通过代理访问，国内被墙）
+    static get GD_API() { return 'https://proxy.646474.xyz/https://music-api.gdstudio.xyz/api.php'; }
     
     bindEvents() {
         // 按钮点击兜底机制：2秒后自动移除 active 状态
