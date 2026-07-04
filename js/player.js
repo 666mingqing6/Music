@@ -411,7 +411,7 @@ class MusicPlayer {
         if (!picUrl) return;
         
         // 检测是否为代理 URL（自建 Meting API 或第三方），需要预解析真实地址
-        const isProxy = picUrl.includes('?type=pic') || picUrl.includes('?server=') || picUrl.includes('/meting/');
+        const isProxy = picUrl.includes('type=pic') || picUrl.includes('?server=') || picUrl.includes('?source=') || picUrl.includes('/meting/') || picUrl.includes('/api.php');
         const isNeteaseCDN = picUrl.includes('music.126.net') || picUrl.includes('.126.net');
         
         let finalUrl = picUrl;
@@ -453,7 +453,7 @@ class MusicPlayer {
         let finalUrl = url;
         
         // 如果是 Meting API 代理 URL，获取真实 URL
-        if (url.includes('?type=pic') || url.includes('?server=') || url.includes('/meting/')) {
+        if (url.includes('type=pic') || url.includes('?server=') || url.includes('?source=') || url.includes('/meting/') || url.includes('/api.php')) {
             try {
                 // 用 AbortController 设置 5 秒超时
                 const controller = new AbortController();
@@ -1051,28 +1051,37 @@ class MusicPlayer {
         this.els.searchLoading.style.display = 'block';
         this.els.searchResults.innerHTML = '';
         
-        try {
-            const url = `${MusicPlayer.GD_API}?types=search&source=netease&name=${encodeURIComponent(query)}&count=30`;
-            console.log('搜索:', url);
-            
-            const controller = new AbortController();
-            const timer = setTimeout(() => controller.abort(), 8000);
-            const resp = await fetch(url, { signal: controller.signal });
-            clearTimeout(timer);
-            
-            if (!resp.ok) throw new Error('HTTP ' + resp.status);
-            const data = await resp.json();
-            
-            if (Array.isArray(data) && data.length > 0) {
-                this.renderSearchResults(data);
-            } else {
+        // 重试 3 次
+        for (let attempt = 1; attempt <= 3; attempt++) {
+            try {
+                const url = `${MusicPlayer.GD_API}?types=search&source=netease&name=${encodeURIComponent(query)}&count=30`;
+                console.log(`搜索 (第${attempt}次):`, url);
+                
+                const controller = new AbortController();
+                const timer = setTimeout(() => controller.abort(), 8000);
+                const resp = await fetch(url, { signal: controller.signal });
+                clearTimeout(timer);
+                
+                if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                const data = await resp.json();
+                
+                if (Array.isArray(data) && data.length > 0) {
+                    this.els.searchLoading.style.display = 'none';
+                    this.renderSearchResults(data);
+                    return;
+                }
                 this.els.searchResults.innerHTML = '<div style="text-align:center;padding:24px;color:var(--color-text-tertiary)">未找到结果</div>';
+                this.els.searchLoading.style.display = 'none';
+                return;
+            } catch (e) {
+                console.warn(`搜索失败 (第${attempt}次):`, e.message);
+                if (attempt < 3) {
+                    await new Promise(r => setTimeout(r, 1000));
+                }
             }
-        } catch (e) {
-            console.warn('搜索失败:', e.message);
-            this.els.searchResults.innerHTML = '<div style="text-align:center;padding:24px;color:var(--color-text-tertiary)">搜索失败，请重试</div>';
         }
         
+        this.els.searchResults.innerHTML = '<div style="text-align:center;padding:24px;color:var(--color-text-tertiary)">搜索失败，请重试</div>';
         this.els.searchLoading.style.display = 'none';
     }
     
