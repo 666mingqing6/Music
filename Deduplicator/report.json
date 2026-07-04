@@ -1,0 +1,152 @@
+[
+    {
+        "hash": "c420a61a444ee55c51e96158a6940730",
+        "kept": "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\file_0_oynls.bin",
+        "deleted": [
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\file_1_asnmw.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\archived\\file_39_hwuwa.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\backup\\file_12_bkbcl.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\backup\\file_81_bjsxu.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\backup\\archived\\file_34_yxach.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\documents\\archived\\file_26_iuohe.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\documents\\archived\\file_51_pzjii.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\media\\file_77_ygwup.bin"
+        ]
+    },
+    {
+        "hash": "dca6a0beb3aea8f9c58eeb6e778303a9",
+        "kept": "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\file_11_xlgou.bin",
+        "deleted": [
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\file_47_ukjrb.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\file_73_mlusr.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\backup\\file_55_wfxpq.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\backup\\file_72_molwd.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\media\\archived\\file_41_jhjlq.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\media\\archived\\file_98_fensg.bin"
+        ]
+    },
+    {
+        "hash": "3a08dc9465f02702311b117236fde2b5",
+        "kept": "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\file_19_aztro.bin",
+        "deleted": [
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\file_78_uotcb.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\file_82_jgwvu.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\archived\\file_42_ubnuq.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\archived\\file_94_amtrn.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\backup\\file_2_odtpw.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\backup\\file_33_uvrhc.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\backup\\file_93_ocdql.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\documents\\file_9_kgxzp.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\documents\\archived\\file_46_ynuse.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\documents\\archived\\file_79_qqzsg.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\documents\\archived\\file_89_jdzlm.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\media\\file_20_hbifw.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\media\\file_66_erykd.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\media\\file_70_ifulm.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\media\\archived\\file_21_qheli.bin"
+        ]
+    },
+    {
+        "hash": "13536e3c6f038a6fe0b316d18e3c9b46",
+        "kept": "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\file_30_xwkdq.bin",
+        "deleted": [
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\file_50_ptnrv.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\archived\\file_3_fgwbs.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\backup\\file_32_tzdyt.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\backup\\file_61_mpvwu.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\backup\\archived\\file_10_lyhjn.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\documents\\file_80_ersur.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\media\\file_52_xflts.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\media\\file_8_gxwad.bin"
+        ]
+    },
+    {
+        "hash": "fc2b6c254208207495031373fee1ae40",
+        "kept": "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\file_35_acxxl.bin",
+        "deleted": [
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\archived\\file_28_lhmdz.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\backup\\file_22_mcunm.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\backup\\file_40_tyinm.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\backup\\archived\\file_58_ntppa.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\backup\\archived\\file_88_gabhd.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\documents\\file_49_bhqml.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\media\\file_14_fmngc.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\media\\file_27_gqcqy.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\media\\archived\\file_37_fudtg.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\media\\archived\\file_38_dadez.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\media\\archived\\file_96_gtrrm.bin"
+        ]
+    },
+    {
+        "hash": "0d90f970a502fdbf63ff808745565b05",
+        "kept": "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\file_65_fojun.bin",
+        "deleted": [
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\archived\\file_76_ycjlp.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\backup\\file_95_pmigm.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\backup\\archived\\file_13_aemmi.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\backup\\archived\\file_29_lshzc.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\documents\\file_31_vnqxb.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\documents\\file_53_peocd.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\documents\\file_99_rfkjq.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\documents\\archived\\file_16_hxskh.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\documents\\archived\\file_83_hhrcq.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\media\\file_86_mvqxl.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\media\\archived\\file_43_tiuca.bin"
+        ]
+    },
+    {
+        "hash": "a9a34d33c421f2791b10ec9a5f085457",
+        "kept": "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\file_91_kjqns.bin",
+        "deleted": [
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\archived\\file_18_osfpq.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\backup\\archived\\file_5_fexrc.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\documents\\file_63_epkiq.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\media\\file_62_qpxra.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\media\\archived\\file_90_rhceh.bin"
+        ]
+    },
+    {
+        "hash": "69bab2183e21ba3483b8aec8399a9f2d",
+        "kept": "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\archived\\file_44_bbjqc.bin",
+        "deleted": [
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\archived\\file_56_hyyys.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\backup\\file_69_opsmq.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\backup\\archived\\file_17_twiei.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\backup\\archived\\file_67_azzmv.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\backup\\archived\\file_7_ginxj.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\documents\\file_48_dpdmo.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\documents\\archived\\file_60_uoxcg.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\media\\file_25_xoxbq.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\media\\file_75_aeycu.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\media\\archived\\file_71_kkyeh.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\media\\archived\\file_92_nmoxb.bin"
+        ]
+    },
+    {
+        "hash": "859281ee4a4eec421ac3a01b64b2298a",
+        "kept": "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\archived\\file_59_bqoob.bin",
+        "deleted": [
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\archived\\file_68_bbhkg.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\backup\\file_23_jtuxw.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\backup\\file_54_uhkqn.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\backup\\file_64_qdvbd.bin"
+        ]
+    },
+    {
+        "hash": "95518ea18dbce04996135cf0008d7305",
+        "kept": "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\archived\\file_6_tbttq.bin",
+        "deleted": [
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\backup\\file_74_pdray.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\backup\\archived\\file_15_sunqe.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\backup\\archived\\file_24_fjvwl.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\backup\\archived\\file_4_adsyw.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\documents\\file_36_gdxvk.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\documents\\archived\\file_84_ttoot.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\documents\\archived\\file_87_elmhw.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\media\\file_45_jvudy.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\media\\file_57_frded.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\media\\file_85_tahbt.bin",
+            "Z:\\HeoMusic\\Music\\Deduplicator\\sample_data\\media\\file_97_jmiqk.bin"
+        ]
+    }
+]

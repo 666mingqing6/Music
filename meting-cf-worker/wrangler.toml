@@ -1,0 +1,16 @@
+# ============================================================
+#  Cloudflare Workers 部署配置 — 自建 Meting API
+# ============================================================
+#
+#  项目地址：https://github.com/666mingqing6/Music
+#  用途：替代 api.injahow.cn，直接对接网易云音乐
+#
+# ============================================================
+
+name = "meting-api"
+main = "index.js"
+compatibility_date = "2025-01-01"
+
+# 免费计划：每天 10 万次请求，个人音乐播放器绰绰有余
+# 如需绑定自定义域名，在 Cloudflare Dashboard 中操作：
+#   Workers & Pages → meting-api → Settings → Triggers → Custom Domains

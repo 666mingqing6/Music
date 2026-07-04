@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+    <meta name="theme-color" content="#000000">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>MQ Music - 沉浸式音乐体验</title>
+    <link rel="icon" type="image/webp" href="./img/icon.webp">
+    <link rel="apple-touch-icon" href="./img/icon-r.webp">
+    <link rel="manifest" href="./manifest.json">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.5.1/css/all.min.css">
+    <link rel="stylesheet" href="./css/modern.css">
+</head>
+<body>
+    <div id="app">
+        <!-- 动态背景层 -->
+        <div id="bg-layer">
+            <div id="bg-cover"></div>
+            <div id="bg-overlay"></div>
+        </div>
+
+        <!-- 主容器 -->
+        <main id="player">
+            <!-- 左侧：封面 + 控制区 -->
+            <section id="player-main">
+                <!-- 封面区域 -->
+                <div id="cover-section">
+                    <div id="cover-container">
+                        <div id="cover-glow"></div>
+                        <img id="cover-art" src="./img/cover.webp" alt="Album Cover">
+                        <div id="cover-reflection"></div>
+                    </div>
+                </div>
+
+                <!-- 歌曲信息 -->
+                <div id="track-info">
+                    <h1 id="track-title">加载中...</h1>
+                    <p id="track-artist">请稍候</p>
+                </div>
+
+                <!-- 进度条 -->
+                <div id="progress-section">
+                    <div id="progress-bar">
+                        <div id="progress-buffer"></div>
+                        <div id="progress-fill"></div>
+                        <input type="range" id="progress-slider" min="0" max="100" value="0" step="0.1">
+                    </div>
+                    <div id="time-display">
+                        <span id="time-current">0:00</span>
+                        <span id="time-total">0:00</span>
+                    </div>
+                </div>
+
+                <!-- 主控制按钮 -->
+                <div id="controls-main">
+                    <button id="btn-mode" class="control-btn active" title="随机播放">
+                        <i class="fas fa-shuffle"></i>
+                    </button>
+                    <button id="btn-prev" class="control-btn" title="上一曲">
+                        <i class="fas fa-backward-step"></i>
+                    </button>
+                    <button id="btn-play" class="control-btn play-btn" title="播放">
+                        <i class="fas fa-play"></i>
+                    </button>
+                    <button id="btn-next" class="control-btn" title="下一曲">
+                        <i class="fas fa-forward-step"></i>
+                    </button>
+                    <div id="volume-control" class="control-btn-wrap">
+                        <button id="btn-volume" class="control-btn" title="音量">
+                            <svg id="volume-icon" viewBox="0 0 24 24" width="22" height="22">
+                                <path class="volume-speaker" d="M3 9v6h4l5 5V4L7 9H3z" fill="currentColor"/>
+                                <path class="volume-wave wave-1" d="M12 8.5a3.5 3.5 0 0 1 0 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                                <path class="volume-wave wave-2" d="M14.5 6a7 7 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                                <path class="volume-wave wave-3" d="M17 3.5a11 11 0 0 1 0 17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                                <line class="volume-mute-line" x1="22" y1="2" x2="2" y2="22" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                            </svg>
+                        </button>
+                        <div id="volume-slider-wrap">
+                            <input type="range" id="volume-slider" min="0" max="100" value="80">
+                            <div id="volume-fill"></div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 右侧：歌词/播放列表面板 -->
+            <section id="player-panel">
+                <!-- 面板切换标签 -->
+                <div id="panel-tabs">
+                    <button class="panel-tab active" data-panel="lyrics">
+                        <i class="fa-regular fa-file-lines"></i>
+                        <span>歌词</span>
+                    </button>
+                    <button class="panel-tab" data-panel="queue">
+                        <i class="fas fa-list"></i>
+                        <span>播放列表</span>
+                    </button>
+                    <button id="btn-switch-api" class="panel-tab api-switch" title="切换API源">
+                        <i class="fas fa-server"></i>
+                        <span id="api-badge" class="api-badge api-gongyi">公益API</span>
+                    </button>
+                </div>
+
+                <!-- 歌词面板 -->
+                <div id="panel-lyrics" class="panel-content active">
+                    <div id="lyrics-scroll">
+                        <div id="lyrics-container">
+                            <p class="lyric-placeholder">正在加载歌词...</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 播放列表面板 -->
+                <div id="panel-queue" class="panel-content">
+                    <div id="queue-search">
+                        <i class="fas fa-search"></i>
+                        <input type="text" id="queue-search-input" placeholder="搜索歌曲...">
+                    </div>
+                    <div id="queue-header">
+                        <span id="queue-count">0 首歌曲</span>
+                    </div>
+                    <div id="queue-list"></div>
+                </div>
+            </section>
+        </main>
+
+        <!-- 移动端：底部导航 -->
+        <nav id="mobile-nav">
+            <button class="nav-btn active" data-view="player">
+                <i class="fas fa-compact-disc"></i>
+                <span>播放</span>
+            </button>
+            <button class="nav-btn" data-view="lyrics">
+                <i class="fa-regular fa-file-lines"></i>
+                <span>歌词</span>
+            </button>
+            <button class="nav-btn" data-view="queue">
+                <i class="fas fa-list"></i>
+                <span>列表</span>
+            </button>
+        </nav>
+
+        <!-- 移动端：全屏歌词视图 -->
+        <div id="mobile-lyrics-view">
+            <div id="mobile-lyrics-header">
+                <button id="btn-close-lyrics">
+                    <i class="fas fa-chevron-down"></i>
+                </button>
+                <div id="mobile-track-info">
+                    <span id="mobile-track-title">歌曲名</span>
+                    <span id="mobile-track-artist">歌手</span>
+                </div>
+            </div>
+            <div id="mobile-lyrics-scroll">
+                <div id="mobile-lyrics-container"></div>
+            </div>
+            <div id="mobile-lyrics-controls">
+                <button id="mobile-btn-prev"><i class="fas fa-backward-step"></i></button>
+                <button id="mobile-btn-play"><i class="fas fa-play"></i></button>
+                <button id="mobile-btn-next"><i class="fas fa-forward-step"></i></button>
+            </div>
+        </div>
+
+        <!-- 移动端：播放列表抽屉 -->
+        <div id="mobile-queue-drawer">
+            <div id="mobile-queue-header">
+                <span>播放列表</span>
+                <button id="btn-close-queue">
+                    <i class="fas fa-xmark"></i>
+                </button>
+            </div>
+            <div id="mobile-queue-search">
+                <i class="fas fa-search"></i>
+                <input type="text" id="mobile-queue-search-input" placeholder="搜索歌曲...">
+            </div>
+            <div id="mobile-queue-list"></div>
+        </div>
+
+        <!-- 音频元素 -->
+        <audio id="audio-player" preload="auto"></audio>
+
+        <!-- 加载遮罩 -->
+        <div id="loading-overlay">
+            <div class="loader">
+                <div class="loader-ring"></div>
+                <div class="loader-ring"></div>
+                <div class="loader-ring"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="./config.js"></script>
+    <script>
+        // 无论 player.js 是否加载成功，2秒后强制隐藏加载遮罩
+        setTimeout(function() {
+            var overlay = document.getElementById('loading-overlay');
+            if (overlay) overlay.classList.add('hidden');
+        }, 1500);
+    </script>
+    <script src="./js/player.js"></script>
+</body>
+</html>
