@@ -138,9 +138,18 @@ class MusicPlayer {
             btnCloseLyrics: $('btn-close-lyrics'),
             
             // 加载
-            loadingOverlay: $('loading-overlay')
+            loadingOverlay: $('loading-overlay'),
+            
+            // 在线搜索
+            searchInput: $('search-input'),
+            searchResults: $('search-results'),
+            searchHint: $('search-hint'),
+            searchLoading: $('search-loading')
         };
     }
+    
+    // GD Studio API 基础地址
+    static get GD_API() { return 'https://music-api.gdstudio.xyz/api.php'; }
     
     bindEvents() {
         // 按钮点击兜底机制：2秒后自动移除 active 状态
@@ -244,6 +253,16 @@ class MusicPlayer {
         // 关闭移动端列表
         if (this.els.btnCloseQueue) {
             this.els.btnCloseQueue.onclick = () => this.closeMobileQueue();
+        }
+        
+        // 在线搜索
+        if (this.els.searchInput) {
+            this.els.searchInput.onkeydown = e => {
+                if (e.key === 'Enter') {
+                    const query = e.target.value.trim();
+                    if (query) this.searchOnline(query);
+                }
+            };
         }
         
         // 歌词滚动检测
@@ -1023,6 +1042,116 @@ class MusicPlayer {
         this.els.queueCount.textContent = `${visibleCount} / ${this.playlist.length} 首歌曲`;
     }
     
+    // ========== 在线搜索 ==========
+    
+    async searchOnline(query) {
+        if (!this.els.searchResults || !this.els.searchHint || !this.els.searchLoading) return;
+        
+        this.els.searchHint.style.display = 'none';
+        this.els.searchLoading.style.display = 'block';
+        this.els.searchResults.innerHTML = '';
+        
+        try {
+            const url = `${MusicPlayer.GD_API}?types=search&source=netease&name=${encodeURIComponent(query)}&count=30`;
+            console.log('搜索:', url);
+            
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 8000);
+            const resp = await fetch(url, { signal: controller.signal });
+            clearTimeout(timer);
+            
+            if (!resp.ok) throw new Error('HTTP ' + resp.status);
+            const data = await resp.json();
+            
+            if (Array.isArray(data) && data.length > 0) {
+                this.renderSearchResults(data);
+            } else {
+                this.els.searchResults.innerHTML = '<div style="text-align:center;padding:24px;color:var(--color-text-tertiary)">未找到结果</div>';
+            }
+        } catch (e) {
+            console.warn('搜索失败:', e.message);
+            this.els.searchResults.innerHTML = '<div style="text-align:center;padding:24px;color:var(--color-text-tertiary)">搜索失败，请重试</div>';
+        }
+        
+        this.els.searchLoading.style.display = 'none';
+    }
+    
+    renderSearchResults(tracks) {
+        const html = tracks.map(t => `
+            <div class="search-result-item" data-id="${this.escapeHtml(t.id || '')}" data-source="${this.escapeHtml(t.source || 'netease')}" data-picid="${this.escapeHtml(t.pic_id || '')}" data-lyricid="${this.escapeHtml(t.lyric_id || '')}">
+                <img class="search-result-cover" src="" alt="" data-picid="${this.escapeHtml(t.pic_id || '')}" onerror="this.style.display='none'">
+                <div class="search-result-info">
+                    <div class="search-result-name">${this.escapeHtml(t.name || '')}</div>
+                    <div class="search-result-artist">${this.escapeHtml(t.artist || '')}</div>
+                </div>
+                <span class="search-result-source">${this.escapeHtml(t.source || '')}</span>
+            </div>
+        `).join('');
+        
+        this.els.searchResults.innerHTML = html;
+        
+        // 绑定点击事件
+        this.els.searchResults.querySelectorAll('.search-result-item').forEach(el => {
+            el.onclick = () => {
+                const id = el.dataset.id;
+                const source = el.dataset.source;
+                const picId = el.dataset.picid;
+                const lyricId = el.dataset.lyricid;
+                if (id) this.playSearchResult({ id, source, pic_id: picId, lyric_id: lyricId, name: el.querySelector('.search-result-name').textContent, artist: el.querySelector('.search-result-artist').textContent });
+            };
+        });
+        
+        // 异步加载封面缩略图
+        this.els.searchResults.querySelectorAll('.search-result-cover').forEach(img => {
+            const picId = img.dataset.picid;
+            if (picId) {
+                fetch(`${MusicPlayer.GD_API}?types=pic&source=netease&id=${picId}&size=300`)
+                    .then(r => r.json())
+                    .then(d => { if (d.url) img.src = d.url; })
+                    .catch(() => {});
+            }
+        });
+    }
+    
+    async playSearchResult(track) {
+        try {
+            // 并行获取 URL 和歌词
+            const urlApi = `${MusicPlayer.GD_API}?types=url&source=${track.source || 'netease'}&id=${track.id}&br=320`;
+            const lyricApi = `${MusicPlayer.GD_API}?types=lyric&source=${track.source || 'netease'}&id=${track.lyric_id || track.id}`;
+            
+            const [urlResp, lrcResp] = await Promise.all([
+                fetch(urlApi).then(r => r.json()).catch(() => ({ url: '' })),
+                fetch(lyricApi).then(r => r.json()).catch(() => ({ lyric: '' }))
+            ]);
+            
+            const audioUrl = urlResp.url || '';
+            if (!audioUrl) {
+                console.warn('无法获取播放地址');
+                return;
+            }
+            
+            // 添加到播放列表并播放
+            const newTrack = {
+                name: track.name,
+                artist: track.artist,
+                url: audioUrl,
+                pic: `${MusicPlayer.GD_API}?types=pic&source=${track.source || 'netease'}&id=${track.pic_id || ''}&size=500`,
+                lrc: lrcResp.lyric || lrcResp.tlyric || '',
+                source: track.source
+            };
+            
+            this.playlist.push(newTrack);
+            const newIndex = this.playlist.length - 1;
+            this.renderQueue();
+            this.loadTrack(newIndex, true);
+            
+            // 切换到播放列表
+            this.switchPanel('queue');
+        } catch (e) {
+            console.error('搜索播放失败:', e);
+        }
+    }
+    
     // ========== 面板切换 ==========
     
     switchPanel(panel) {
@@ -1032,6 +1161,13 @@ class MusicPlayer {
         
         this.els.panelLyrics.classList.toggle('active', panel === 'lyrics');
         this.els.panelQueue.classList.toggle('active', panel === 'queue');
+        const panelSearch = document.getElementById('panel-search');
+        if (panelSearch) panelSearch.classList.toggle('active', panel === 'search');
+        
+        // 切换到搜索面板时聚焦输入框
+        if (panel === 'search' && this.els.searchInput) {
+            setTimeout(() => this.els.searchInput.focus(), 100);
+        }
     }
     
     // ========== 移动端 ==========

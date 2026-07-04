@@ -97,7 +97,10 @@
                         <i class="fas fa-list"></i>
                         <span>播放列表</span>
                     </button>
-
+                    <button class="panel-tab" data-panel="search">
+                        <i class="fas fa-globe"></i>
+                        <span>搜索</span>
+                    </button>
                 </div>
 
                 <!-- 歌词面板 -->
@@ -119,6 +122,19 @@
                         <span id="queue-count">0 首歌曲</span>
                     </div>
                     <div id="queue-list"></div>
+                </div>
+
+                <!-- 在线搜索面板 -->
+                <div id="panel-search" class="panel-content">
+                    <div id="search-input-wrap">
+                        <i class="fas fa-search"></i>
+                        <input type="text" id="search-input" placeholder="输入歌名/歌手搜索...">
+                    </div>
+                    <div id="search-hint">输入关键词后按回车搜索</div>
+                    <div id="search-loading" style="display:none">
+                        <i class="fas fa-spinner fa-spin"></i> 搜索中...
+                    </div>
+                    <div id="search-results"></div>
                 </div>
             </section>
         </main>
