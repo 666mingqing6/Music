@@ -153,6 +153,10 @@
                 <i class="fas fa-list"></i>
                 <span>列表</span>
             </button>
+            <button class="nav-btn" data-view="search">
+                <i class="fas fa-globe"></i>
+                <span>搜索</span>
+            </button>
         </nav>
 
         <!-- 移动端：全屏歌词视图 -->
@@ -174,6 +178,25 @@
                 <button id="mobile-btn-play"><i class="fas fa-play"></i></button>
                 <button id="mobile-btn-next"><i class="fas fa-forward-step"></i></button>
             </div>
+        </div>
+
+        <!-- 移动端：在线搜索抽屉 -->
+        <div id="mobile-search-drawer">
+            <div id="mobile-search-header">
+                <span>在线搜索</span>
+                <button id="btn-close-search">
+                    <i class="fas fa-xmark"></i>
+                </button>
+            </div>
+            <div id="mobile-search-input-wrap">
+                <i class="fas fa-search"></i>
+                <input type="text" id="mobile-search-input" placeholder="输入歌名/歌手搜索...">
+            </div>
+            <div id="mobile-search-hint">输入关键词后按回车搜索</div>
+            <div id="mobile-search-loading" style="display:none">
+                <i class="fas fa-spinner fa-spin"></i> 搜索中...
+            </div>
+            <div id="mobile-search-results"></div>
         </div>
 
         <!-- 移动端：播放列表抽屉 -->

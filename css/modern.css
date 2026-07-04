@@ -1191,6 +1191,97 @@ input[type="range"] {
     padding: var(--space-sm);
 }
 
+/* ========== 移动端搜索抽屉 ========== */
+#mobile-search-drawer {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 300;
+    background: var(--color-bg);
+    flex-direction: column;
+    transform: translateY(100%);
+    transition: transform 0.4s var(--ease-out);
+}
+
+#mobile-search-drawer.active {
+    display: flex;
+    transform: translateY(0);
+}
+
+#mobile-search-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--space-md) var(--space-lg);
+    padding-top: max(var(--space-md), env(safe-area-inset-top));
+    border-bottom: 1px solid var(--color-border);
+}
+
+#mobile-search-header span {
+    font-size: 1.1rem;
+    font-weight: 600;
+}
+
+#btn-close-search {
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--color-text-secondary);
+    font-size: 1.25rem;
+}
+
+#mobile-search-input-wrap {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    padding: var(--space-sm) var(--space-lg);
+    border-bottom: 1px solid var(--color-border);
+}
+
+#mobile-search-input-wrap i {
+    color: var(--color-text-tertiary);
+    font-size: 0.9rem;
+}
+
+#mobile-search-input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: var(--color-text-primary);
+    font-size: 0.9rem;
+    padding: var(--space-xs) 0;
+}
+
+#mobile-search-input::placeholder {
+    color: var(--color-text-tertiary);
+}
+
+#mobile-search-hint {
+    text-align: center;
+    padding: var(--space-xl);
+    color: var(--color-text-tertiary);
+    font-size: 0.85rem;
+}
+
+#mobile-search-loading {
+    text-align: center;
+    padding: var(--space-lg);
+    color: var(--color-text-tertiary);
+    font-size: 0.85rem;
+}
+
+#mobile-search-results {
+    flex: 1;
+    overflow-y: auto;
+    padding: var(--space-sm);
+}
+
 #mobile-lyrics-controls {
     display: flex;
     justify-content: center;

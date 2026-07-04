@@ -144,7 +144,15 @@ class MusicPlayer {
             searchInput: $('search-input'),
             searchResults: $('search-results'),
             searchHint: $('search-hint'),
-            searchLoading: $('search-loading')
+            searchLoading: $('search-loading'),
+            
+            // 移动端搜索
+            mobileSearchDrawer: $('mobile-search-drawer'),
+            mobileSearchInput: $('mobile-search-input'),
+            mobileSearchResults: $('mobile-search-results'),
+            mobileSearchHint: $('mobile-search-hint'),
+            mobileSearchLoading: $('mobile-search-loading'),
+            btnCloseSearch: $('btn-close-search')
         };
     }
     
@@ -255,7 +263,7 @@ class MusicPlayer {
             this.els.btnCloseQueue.onclick = () => this.closeMobileQueue();
         }
         
-        // 在线搜索
+        // 在线搜索（桌面端）
         if (this.els.searchInput) {
             this.els.searchInput.onkeydown = e => {
                 if (e.key === 'Enter') {
@@ -263,6 +271,19 @@ class MusicPlayer {
                     if (query) this.searchOnline(query);
                 }
             };
+        }
+        
+        // 在线搜索（移动端）
+        if (this.els.mobileSearchInput) {
+            this.els.mobileSearchInput.onkeydown = e => {
+                if (e.key === 'Enter') {
+                    const query = e.target.value.trim();
+                    if (query) this.searchOnline(query, true);
+                }
+            };
+        }
+        if (this.els.btnCloseSearch) {
+            this.els.btnCloseSearch.onclick = () => this.closeMobileSearch();
         }
         
         // 歌词滚动检测
@@ -1044,12 +1065,18 @@ class MusicPlayer {
     
     // ========== 在线搜索 ==========
     
-    async searchOnline(query) {
-        if (!this.els.searchResults || !this.els.searchHint || !this.els.searchLoading) return;
+    async searchOnline(query, mobile = false) {
+        const resultsEl = mobile ? this.els.mobileSearchResults : this.els.searchResults;
+        const hintEl = mobile ? this.els.mobileSearchHint : this.els.searchHint;
+        const loadingEl = mobile ? this.els.mobileSearchLoading : this.els.searchLoading;
+        if (!resultsEl) return;
         
-        this.els.searchHint.style.display = 'none';
-        this.els.searchLoading.style.display = 'block';
-        this.els.searchResults.innerHTML = '';
+        if (hintEl) hintEl.style.display = 'none';
+        if (loadingEl) loadingEl.style.display = 'block';
+        resultsEl.innerHTML = '';
+        
+        const noResult = '<div style="text-align:center;padding:24px;color:var(--color-text-tertiary)">未找到结果</div>';
+        const failResult = '<div style="text-align:center;padding:24px;color:var(--color-text-tertiary)">搜索失败，请重试</div>';
         
         // 重试 3 次
         for (let attempt = 1; attempt <= 3; attempt++) {
@@ -1066,12 +1093,12 @@ class MusicPlayer {
                 const data = await resp.json();
                 
                 if (Array.isArray(data) && data.length > 0) {
-                    this.els.searchLoading.style.display = 'none';
-                    this.renderSearchResults(data);
+                    if (loadingEl) loadingEl.style.display = 'none';
+                    this.renderSearchResults(data, mobile);
                     return;
                 }
-                this.els.searchResults.innerHTML = '<div style="text-align:center;padding:24px;color:var(--color-text-tertiary)">未找到结果</div>';
-                this.els.searchLoading.style.display = 'none';
+                resultsEl.innerHTML = noResult;
+                if (loadingEl) loadingEl.style.display = 'none';
                 return;
             } catch (e) {
                 console.warn(`搜索失败 (第${attempt}次):`, e.message);
@@ -1081,11 +1108,11 @@ class MusicPlayer {
             }
         }
         
-        this.els.searchResults.innerHTML = '<div style="text-align:center;padding:24px;color:var(--color-text-tertiary)">搜索失败，请重试</div>';
-        this.els.searchLoading.style.display = 'none';
+        resultsEl.innerHTML = failResult;
+        if (loadingEl) loadingEl.style.display = 'none';
     }
     
-    renderSearchResults(tracks) {
+    renderSearchResults(tracks, mobile = false) {
         const html = tracks.map(t => `
             <div class="search-result-item" data-id="${this.escapeHtml(t.id || '')}" data-source="${this.escapeHtml(t.source || 'netease')}" data-picid="${this.escapeHtml(t.pic_id || '')}" data-lyricid="${this.escapeHtml(t.lyric_id || '')}">
                 <img class="search-result-cover" src="" alt="" data-picid="${this.escapeHtml(t.pic_id || '')}" onerror="this.style.display='none'">
@@ -1097,21 +1124,26 @@ class MusicPlayer {
             </div>
         `).join('');
         
-        this.els.searchResults.innerHTML = html;
+        const container = mobile ? this.els.mobileSearchResults : this.els.searchResults;
+        if (!container) return;
+        container.innerHTML = html;
         
         // 绑定点击事件
-        this.els.searchResults.querySelectorAll('.search-result-item').forEach(el => {
+        container.querySelectorAll('.search-result-item').forEach(el => {
             el.onclick = () => {
                 const id = el.dataset.id;
                 const source = el.dataset.source;
                 const picId = el.dataset.picid;
                 const lyricId = el.dataset.lyricid;
-                if (id) this.playSearchResult({ id, source, pic_id: picId, lyric_id: lyricId, name: el.querySelector('.search-result-name').textContent, artist: el.querySelector('.search-result-artist').textContent });
+                if (id) {
+                    this.playSearchResult({ id, source, pic_id: picId, lyric_id: lyricId, name: el.querySelector('.search-result-name').textContent, artist: el.querySelector('.search-result-artist').textContent });
+                    if (mobile) this.closeMobileSearch();
+                }
             };
         });
         
         // 异步加载封面缩略图
-        this.els.searchResults.querySelectorAll('.search-result-cover').forEach(img => {
+        container.querySelectorAll('.search-result-cover').forEach(img => {
             const picId = img.dataset.picid;
             if (picId) {
                 fetch(`${MusicPlayer.GD_API}?types=pic&source=netease&id=${picId}&size=300`)
@@ -1186,15 +1218,16 @@ class MusicPlayer {
             btn.classList.toggle('active', btn.dataset.view === view);
         });
         
+        this.els.mobileLyricsView.classList.remove('active');
+        this.els.mobileQueueDrawer.classList.remove('active');
+        if (this.els.mobileSearchDrawer) this.els.mobileSearchDrawer.classList.remove('active');
+        
         if (view === 'lyrics') {
             this.els.mobileLyricsView.classList.add('active');
-            this.els.mobileQueueDrawer.classList.remove('active');
         } else if (view === 'queue') {
-            this.els.mobileLyricsView.classList.remove('active');
             this.openMobileQueue();
-        } else {
-            this.els.mobileLyricsView.classList.remove('active');
-            this.els.mobileQueueDrawer.classList.remove('active');
+        } else if (view === 'search') {
+            this.openMobileSearch();
         }
     }
     
@@ -1202,6 +1235,24 @@ class MusicPlayer {
         if (this.els.mobileQueueDrawer) {
             this.els.mobileQueueDrawer.classList.add('active');
         }
+    }
+    
+    openMobileSearch() {
+        if (this.els.mobileSearchDrawer) {
+            this.els.mobileSearchDrawer.classList.add('active');
+            setTimeout(() => { if (this.els.mobileSearchInput) this.els.mobileSearchInput.focus(); }, 300);
+        }
+    }
+    
+    closeMobileSearch() {
+        if (this.els.mobileSearchDrawer) {
+            this.els.mobileSearchDrawer.classList.remove('active');
+        }
+        const playerBtn = document.querySelector('.nav-btn[data-view="player"]');
+        if (playerBtn) playerBtn.classList.add('active');
+        document.querySelectorAll('.nav-btn').forEach(btn => {
+            if (btn.dataset.view !== 'player') btn.classList.remove('active');
+        });
     }
     
     closeMobileQueue() {
