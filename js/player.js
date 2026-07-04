@@ -59,6 +59,7 @@ class MusicPlayer {
             this.renderQueue();
             if (this.playlist.length > 0) {
                 const randomIndex = Math.floor(Math.random() * this.playlist.length);
+                this._pushHistory(this.currentIndex);
                 this.loadTrack(randomIndex, true);
             }
             this.resolveAllCovers();
@@ -267,44 +268,48 @@ class MusicPlayer {
     async loadPlaylist() {
         const localData = typeof localMusic !== 'undefined' ? localMusic : [];
         
-        try {
-            const url = this.apiUrl
-                .replace(':server', typeof userServer !== 'undefined' ? userServer : 'netease')
-                .replace(':type', typeof userType !== 'undefined' ? userType : 'playlist')
-                .replace(':id', typeof userId !== 'undefined' ? userId : '12675886878')
-                .replace(':r', Math.random());
-            
-            console.log('请求 API:', url);
-            
-            const controller = new AbortController();
-            const timer = setTimeout(() => controller.abort(), 8000);
-            const response = await fetch(url, { signal: controller.signal });
-            clearTimeout(timer);
-            
-            if (response.ok) {
-                const onlineData = await response.json();
-                if (Array.isArray(onlineData) && onlineData.length > 0) {
-                    console.log('API 成功，获取到', onlineData.length, '首歌曲');
-                    this.playlist = [...localData, ...onlineData];
-                    return;
+        // 重试 3 次
+        for (let attempt = 1; attempt <= 3; attempt++) {
+            try {
+                const url = this.apiUrl
+                    .replace(':server', typeof userServer !== 'undefined' ? userServer : 'netease')
+                    .replace(':type', typeof userType !== 'undefined' ? userType : 'playlist')
+                    .replace(':id', typeof userId !== 'undefined' ? userId : '12675886878')
+                    .replace(':r', Math.random());
+                
+                console.log(`API 请求 (第${attempt}次):`, url);
+                
+                const controller = new AbortController();
+                const timer = setTimeout(() => controller.abort(), 8000);
+                const response = await fetch(url, { signal: controller.signal });
+                clearTimeout(timer);
+                
+                if (response.ok) {
+                    const onlineData = await response.json();
+                    if (Array.isArray(onlineData) && onlineData.length > 0) {
+                        console.log('API 成功，获取到', onlineData.length, '首歌曲');
+                        this.playlist = [...localData, ...onlineData];
+                        return;
+                    }
                 }
+                console.warn(`API 第${attempt}次返回无效数据`);
+            } catch (error) {
+                console.warn(`API 请求失败 (第${attempt}次):`, error.message);
             }
-        } catch (error) {
-            console.warn('API 请求失败:', error.message);
+            
+            // 未到最后一次就等一会再重试
+            if (attempt < 3) {
+                await new Promise(r => setTimeout(r, 1500));
+            }
         }
         
-        // API 失败，仅使用本地音乐
-        console.log('API 不可用，仅使用本地音乐');
+        // 3 次都失败，仅使用本地音乐
+        console.log('API 3 次均失败，仅使用本地音乐');
         this.playlist = localData;
     }
     
     async loadTrack(index, autoPlay = false) {
         if (index < 0 || index >= this.playlist.length) return;
-        
-        // 记录旧歌曲索引到播放历史（prev 回溯用），不重复入栈
-        if (this.playHistory.length === 0 || this.playHistory[this.playHistory.length - 1] !== this.currentIndex) {
-            this.playHistory.push(this.currentIndex);
-        }
         
         this.currentIndex = index;
         const track = this.playlist[index];
@@ -681,6 +686,13 @@ class MusicPlayer {
     
     // ========== 播放控制 ==========
     
+    // 推入播放历史（去重）
+    _pushHistory(idx) {
+        if (this.playHistory.length === 0 || this.playHistory[this.playHistory.length - 1] !== idx) {
+            this.playHistory.push(idx);
+        }
+    }
+    
     // 读取播放次数（localStorage）
     _loadPlayCount() {
         try {
@@ -733,14 +745,15 @@ class MusicPlayer {
     next() {
         let index;
         if (this.playMode === 'shuffle') {
-            // 有前进记录则走确定路线，否则平均随机选新歌
             if (this.playRedo.length > 0) {
+                // 前进栈有记录：走确定路线，不推历史
                 index = this.playRedo.pop();
             } else {
+                // 新歌：推当前歌到历史
+                this._pushHistory(this.currentIndex);
                 index = this._getLeastPlayedIndex(this.currentIndex);
             }
         } else {
-            // 顺序播放/单曲循环：播放下一首
             index = this.currentIndex + 1;
             if (index >= this.playlist.length) index = 0;
         }
@@ -781,12 +794,12 @@ class MusicPlayer {
             this.els.audio.currentTime = 0;
             this.play();
         } else {
-            // 播放结束后直接加载并播放下一首
             let index;
             if (this.playMode === 'shuffle') {
                 if (this.playRedo.length > 0) {
                     index = this.playRedo.pop();
                 } else {
+                    this._pushHistory(this.currentIndex);
                     index = this._getLeastPlayedIndex(this.currentIndex);
                 }
             } else {
