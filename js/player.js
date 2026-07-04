@@ -26,6 +26,8 @@ class MusicPlayer {
         
         // 播放历史（用于上一首回溯）
         this.playHistory = [];
+        // 前进栈（prev 后 next 走确定路线，不重新随机）
+        this.playRedo = [];
         
         // 播放次数统计（平均随机用，localStorage 持久化）
         this.playCount = this._loadPlayCount();
@@ -783,8 +785,12 @@ class MusicPlayer {
     }
     
     prev() {
-        // 从播放历史中取上一首（不管什么模式都回溯，不随机）
+        // 从播放历史中取上一首
         const prevIdx = this.playHistory.pop();
+        if (prevIdx !== undefined) {
+            // 把当前歌推入前进栈，供后续 next 走确定路线
+            this.playRedo.push(this.currentIndex);
+        }
         const index = prevIdx !== undefined ? prevIdx : this.currentIndex - 1;
         this.loadTrack(index >= 0 ? index : this.playlist.length - 1, this.isPlaying);
     }
@@ -792,8 +798,12 @@ class MusicPlayer {
     next() {
         let index;
         if (this.playMode === 'shuffle') {
-            // 平均随机：选播放次数最少的歌曲
-            index = this._getLeastPlayedIndex(this.currentIndex);
+            // 有前进记录则走确定路线，否则平均随机选新歌
+            if (this.playRedo.length > 0) {
+                index = this.playRedo.pop();
+            } else {
+                index = this._getLeastPlayedIndex(this.currentIndex);
+            }
         } else {
             // 顺序播放/单曲循环：播放下一首
             index = this.currentIndex + 1;
@@ -839,7 +849,11 @@ class MusicPlayer {
             // 播放结束后直接加载并播放下一首
             let index;
             if (this.playMode === 'shuffle') {
-                index = this._getLeastPlayedIndex(this.currentIndex);
+                if (this.playRedo.length > 0) {
+                    index = this.playRedo.pop();
+                } else {
+                    index = this._getLeastPlayedIndex(this.currentIndex);
+                }
             } else {
                 index = this.currentIndex + 1;
                 if (index >= this.playlist.length) index = 0;
