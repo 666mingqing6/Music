@@ -1149,20 +1149,85 @@ class MusicPlayer {
         }
     }
     
-    async _loadCover(img) {
+    // 本地计算网易云 CDN 封面 URL（避免 CORS/503）
+    _neteaseCoverUrl(picId, size = 300) {
+        const magic = '3go8&$8*3*3h0k(2)2';
+        const bytes = new Uint8Array(picId.length);
+        for (let i = 0; i < picId.length; i++) {
+            bytes[i] = picId.charCodeAt(i) ^ magic.charCodeAt(i % magic.length);
+        }
+        // 用浏览器原生 crypto 做 MD5（异步），同步回退用简易 hash
+        const hash = this._md5(bytes);
+        const b64 = btoa(String.fromCharCode(...new Uint8Array(hash)))
+            .replace(/\//g, '_').replace(/\+/g, '-');
+        return `https://p3.music.126.net/${b64}/${picId}.jpg?param=${size}y${size}`;
+    }
+    
+    // 简易 MD5（hex，用于网易云加密 ID）
+    _md5(bytes) {
+        // 使用 SubtleCrypto 的异步 MD5 不可用时的回退——这里用纯 JS MD5
+        // 实际场景：网易云 pic ID 加密需要 raw MD5 bytes，我们内联一个 light md5
+        const md5 = this._md5raw(bytes);
+        return md5;
+    }
+    
+    _md5raw(input) {
+        // 纯 JS MD5 实现（RFC 1321）
+        // 仅用于计算网易云封面加密 ID，不用于安全场景
+        const S = [7,12,17,22,7,12,17,22,7,12,17,22,7,12,17,22,
+                   5,9,14,20,5,9,14,20,5,9,14,20,5,9,14,20,
+                   4,11,16,23,4,11,16,23,4,11,16,23,4,11,16,23,
+                   6,10,15,21,6,10,15,21,6,10,15,21,6,10,15,21];
+        const K = new Uint32Array(64);
+        for (let i = 0; i < 64; i++) K[i] = Math.floor(Math.abs(Math.sin(i+1)) * 0x100000000);
+        
+        const msg = new Uint8Array(input.length + 72);
+        msg.set(input);
+        msg[input.length] = 0x80;
+        const bitLen = input.length * 8;
+        const padLen = ((input.length + 8) % 64 < 56) ? (56 - (input.length + 8) % 64) : (120 - (input.length + 8) % 64);
+        const totalLen = input.length + 1 + padLen + 8;
+        
+        const padded = new Uint8Array(totalLen);
+        padded.set(input);
+        padded[input.length] = 0x80;
+        const dv = new DataView(padded.buffer);
+        dv.setUint32(totalLen - 8, bitLen & 0xFFFFFFFF, true);
+        dv.setUint32(totalLen - 4, Math.floor(bitLen / 0x100000000), true);
+        
+        let a = 0x67452301, b = 0xEFCDAB89, c = 0x98BADCFE, d = 0x10325476;
+        
+        for (let offset = 0; offset < totalLen; offset += 64) {
+            const M = new Uint32Array(16);
+            for (let i = 0; i < 16; i++) {
+                M[i] = padded[offset + i*4] | (padded[offset + i*4 + 1] << 8) |
+                       (padded[offset + i*4 + 2] << 16) | (padded[offset + i*4 + 3] << 24);
+            }
+            let A = a, B = b, C = c, D = d;
+            for (let i = 0; i < 64; i++) {
+                let F, g;
+                if (i < 16) { F = (B & C) | (~B & D); g = i; }
+                else if (i < 32) { F = (D & B) | (~D & C); g = (5*i + 1) % 16; }
+                else if (i < 48) { F = B ^ C ^ D; g = (3*i + 5) % 16; }
+                else { F = C ^ (B | ~D); g = (7*i) % 16; }
+                F = (F + A + K[i] + M[g]) >>> 0;
+                A = D; D = C; C = B;
+                B = (B + ((F << S[i]) | (F >>> (32 - S[i])))) >>> 0;
+            }
+            a = (a + A) >>> 0; b = (b + B) >>> 0; c = (c + C) >>> 0; d = (d + D) >>> 0;
+        }
+        
+        const result = new Uint8Array(16);
+        const out = new DataView(result.buffer);
+        out.setUint32(0, a, true); out.setUint32(4, b, true);
+        out.setUint32(8, c, true); out.setUint32(12, d, true);
+        return result;
+    }
+    
+    _loadCover(img) {
         const picId = img.dataset.picid;
         if (!picId) return;
-        // 重试 2 次
-        for (let attempt = 1; attempt <= 2; attempt++) {
-            try {
-                const resp = await fetch(`${MusicPlayer.GD_API}?types=pic&source=netease&id=${picId}&size=300`);
-                if (resp.ok) {
-                    const d = await resp.json();
-                    if (d.url) { img.src = d.url; return; }
-                }
-            } catch (e) {}
-            if (attempt < 2) await new Promise(r => setTimeout(r, 500));
-        }
+        img.src = this._neteaseCoverUrl(picId, 300);
     }
     
     async playSearchResult(track) {
