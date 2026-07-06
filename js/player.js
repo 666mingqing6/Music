@@ -1254,7 +1254,7 @@ class MusicPlayer {
                 name: track.name,
                 artist: track.artist,
                 url: audioUrl,
-                pic: `${MusicPlayer.GD_API}?types=pic&source=${track.source || 'netease'}&id=${track.pic_id || ''}&size=500`,
+                pic: this._neteaseCoverUrl(track.pic_id, 500),
                 lrc: lrcResp.lyric || lrcResp.tlyric || '',
                 source: track.source
             };
