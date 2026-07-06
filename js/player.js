@@ -24,10 +24,9 @@ class MusicPlayer {
         // 封面缓存
         this.coverCache = new Map();
         
-        // 播放历史（用于上一首回溯）
-        this.playHistory = [];
-        // 前进栈（prev 后 next 走确定路线，不重新随机）
-        this.playRedo = [];
+        // 播放路径（一个确定性数组 + 当前位置指针）
+        this.playPath = [];
+        this.pathPos = -1;
         
         // 播放次数统计（平均随机用，localStorage 持久化）
         this.playCount = this._loadPlayCount();
@@ -59,7 +58,8 @@ class MusicPlayer {
             this.renderQueue();
             if (this.playlist.length > 0) {
                 const randomIndex = Math.floor(Math.random() * this.playlist.length);
-                this._pushHistory(this.currentIndex);
+                this.playPath = [randomIndex];
+                this.pathPos = 0;
                 this.loadTrack(randomIndex, true);
             }
             this.resolveAllCovers();
@@ -726,13 +726,6 @@ class MusicPlayer {
     
     // ========== 播放控制 ==========
     
-    // 推入播放历史（去重）
-    _pushHistory(idx) {
-        if (this.playHistory.length === 0 || this.playHistory[this.playHistory.length - 1] !== idx) {
-            this.playHistory.push(idx);
-        }
-    }
-    
     // 读取播放次数（localStorage）
     _loadPlayCount() {
         try {
@@ -772,26 +765,26 @@ class MusicPlayer {
     }
     
     prev() {
-        // 从播放历史中取上一首
-        const prevIdx = this.playHistory.pop();
-        if (prevIdx !== undefined) {
-            // 把当前歌推入前进栈，供后续 next 走确定路线
-            this.playRedo.push(this.currentIndex);
+        // 播放路径上回退一步
+        if (this.pathPos > 0) {
+            this.pathPos--;
+            const index = this.playPath[this.pathPos];
+            this.loadTrack(index, this.isPlaying);
         }
-        const index = prevIdx !== undefined ? prevIdx : this.currentIndex - 1;
-        this.loadTrack(index >= 0 ? index : this.playlist.length - 1, this.isPlaying);
     }
     
     next() {
         let index;
         if (this.playMode === 'shuffle') {
-            if (this.playRedo.length > 0) {
-                // 前进栈有记录：走确定路线，不推历史
-                index = this.playRedo.pop();
+            // 如果路径上还有后续，就走确定路线
+            if (this.pathPos < this.playPath.length - 1) {
+                this.pathPos++;
+                index = this.playPath[this.pathPos];
             } else {
-                // 新歌：推当前歌到历史
-                this._pushHistory(this.currentIndex);
+                // 新歌：追加到路径末尾
                 index = this._getLeastPlayedIndex(this.currentIndex);
+                this.playPath.push(index);
+                this.pathPos++;
             }
         } else {
             index = this.currentIndex + 1;
@@ -836,11 +829,13 @@ class MusicPlayer {
         } else {
             let index;
             if (this.playMode === 'shuffle') {
-                if (this.playRedo.length > 0) {
-                    index = this.playRedo.pop();
+                if (this.pathPos < this.playPath.length - 1) {
+                    this.pathPos++;
+                    index = this.playPath[this.pathPos];
                 } else {
-                    this._pushHistory(this.currentIndex);
                     index = this._getLeastPlayedIndex(this.currentIndex);
+                    this.playPath.push(index);
+                    this.pathPos++;
                 }
             } else {
                 index = this.currentIndex + 1;

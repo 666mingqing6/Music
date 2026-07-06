@@ -204,7 +204,11 @@ input[type="range"] {
     );
     pointer-events: none;
     z-index: 2;
-    transition: opacity 0.6s var(--ease-out);
+}
+
+/* 播放时容器也呼吸，带动 ::after 高光一起 */
+#cover-container.playing::after {
+    animation: coverPulse 8s ease-in-out infinite;
 }
 
 #cover-glow {
