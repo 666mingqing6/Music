@@ -1137,22 +1137,13 @@ class MusicPlayer {
             };
         });
         
-        // 异步加载封面缩略图（通过代理，国内直连 CDN 会被墙）
+        // 异步加载封面缩略图
         container.querySelectorAll('.search-result-cover').forEach(img => {
             const picId = img.dataset.picid;
             if (picId) {
                 fetch(`${MusicPlayer.GD_API}?types=pic&source=netease&id=${picId}&size=300`)
                     .then(r => r.json())
-                    .then(d => {
-                        if (d.url) {
-                            // 图片 CDN 也被墙，走代理
-                            img.src = `https://proxy.646474.xyz/${d.url}`;
-                            img.onerror = function() {
-                                // 代理失败兜底：直接请求原图（可能走浏览器缓存）
-                                this.src = d.url;
-                            };
-                        }
-                    })
+                    .then(d => { if (d.url) img.src = d.url; })
                     .catch(() => {});
             }
         });
