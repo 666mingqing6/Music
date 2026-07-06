@@ -1073,14 +1073,14 @@ class MusicPlayer {
         const noResult = '<div style="text-align:center;padding:24px;color:var(--color-text-tertiary)">未找到结果</div>';
         const failResult = '<div style="text-align:center;padding:24px;color:var(--color-text-tertiary)">搜索失败，请重试</div>';
         
-        // 重试 3 次
-        for (let attempt = 1; attempt <= 3; attempt++) {
+        // 重试 5 次
+        for (let attempt = 1; attempt <= 5; attempt++) {
             try {
                 const url = `${MusicPlayer.GD_API}?types=search&source=netease&name=${encodeURIComponent(query)}&count=30`;
                 console.log(`搜索 (第${attempt}次):`, url);
                 
                 const controller = new AbortController();
-                const timer = setTimeout(() => controller.abort(), 8000);
+                const timer = setTimeout(() => controller.abort(), 10000);
                 const resp = await fetch(url, { signal: controller.signal });
                 clearTimeout(timer);
                 
@@ -1097,7 +1097,7 @@ class MusicPlayer {
                 return;
             } catch (e) {
                 console.warn(`搜索失败 (第${attempt}次):`, e.message);
-                if (attempt < 3) {
+                if (attempt < 5) {
                     await new Promise(r => setTimeout(r, 1000));
                 }
             }
