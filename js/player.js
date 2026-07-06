@@ -1137,16 +1137,33 @@ class MusicPlayer {
             };
         });
         
-        // 异步加载封面缩略图
-        container.querySelectorAll('.search-result-cover').forEach(img => {
-            const picId = img.dataset.picid;
-            if (picId) {
-                fetch(`${MusicPlayer.GD_API}?types=pic&source=netease&id=${picId}&size=300`)
-                    .then(r => r.json())
-                    .then(d => { if (d.url) img.src = d.url; })
-                    .catch(() => {});
-            }
-        });
+        // 异步加载封面缩略图（控制并发，避免代理 503）
+        this._loadCovers(container.querySelectorAll('.search-result-cover'));
+    }
+    
+    async _loadCovers(imgs) {
+        const CONCURRENCY = 3;
+        const items = Array.from(imgs).filter(img => img.dataset.picid);
+        for (let i = 0; i < items.length; i += CONCURRENCY) {
+            await Promise.all(items.slice(i, i + CONCURRENCY).map(img => this._loadCover(img)));
+        }
+    }
+    
+    async _loadCover(img) {
+        const picId = img.dataset.picid;
+        if (!picId) return;
+        // 重试 2 次
+        for (let attempt = 1; attempt <= 2; attempt++) {
+            try {
+                const resp = await fetch(`${MusicPlayer.GD_API}?types=pic&source=netease&id=${picId}&size=300`);
+                if (resp.ok) {
+                    const d = await resp.json();
+                    if (d.url) { img.src = d.url; return; }
+                }
+            } catch (e) {}
+            if (attempt < 2) await new Promise(r => setTimeout(r, 500));
+        }
+    }
     }
     
     async playSearchResult(track) {
