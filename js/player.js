@@ -1137,31 +1137,99 @@ class MusicPlayer {
             };
         });
         
-        // 异步加载封面缩略图（控制并发，避免代理 503）
+        // 本地计算封面 CDN URL（零网络请求）
         this._loadCovers(container.querySelectorAll('.search-result-cover'));
     }
     
-    async _loadCovers(imgs) {
-        const CONCURRENCY = 3;
-        const items = Array.from(imgs).filter(img => img.dataset.picid);
-        for (let i = 0; i < items.length; i += CONCURRENCY) {
-            await Promise.all(items.slice(i, i + CONCURRENCY).map(img => this._loadCover(img)));
-        }
+    _loadCovers(imgs) {
+        // 本地计算 CDN URL，无需网络请求
+        Array.from(imgs).forEach(img => this._loadCover(img));
     }
     
-    async _loadCover(img) {
+    // 网易云封面 ID → CDN URL（本地计算，零网络请求）
+    _neteaseCoverUrl(picId, size = 300) {
+        const magic = '3go8&$8*3*3h0k(2)2';
+        let xored = '';
+        for (let i = 0; i < picId.length; i++) {
+            xored += String.fromCharCode(picId.charCodeAt(i) ^ magic.charCodeAt(i % magic.length));
+        }
+        const encrypted = this._md5base64(xored).replace(/\//g, '_').replace(/\+/g, '-');
+        return `https://p3.music.126.net/${encrypted}/${picId}.jpg?param=${size}y${size}`;
+    }
+    
+    // 已验证 MD5（joseph myers 实现）
+    _md5base64(s) {
+        const hex = this._md5hex(s);
+        const raw = new Uint8Array(16);
+        for (let i = 0; i < 16; i++) raw[i] = parseInt(hex.substr(i*2,2), 16);
+        return btoa(String.fromCharCode(...raw));
+    }
+    
+    _md5hex(s) {
+        const n = s.length, state = [1732584193, -271733879, -1732584194, 271733878];
+        let i = 64;
+        for (; i <= n; i += 64) this._md5cycle(state, this._md5blk(s.substring(i - 64, i)));
+        s = s.substring(i - 64);
+        const tail = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
+        for (i = 0; i < s.length; i++) tail[i >> 2] |= s.charCodeAt(i) << ((i % 4) << 3);
+        tail[i >> 2] |= 0x80 << ((i % 4) << 3);
+        if (i > 55) { this._md5cycle(state, tail); for (i = 0; i < 16; i++) tail[i] = 0; }
+        tail[14] = n * 8;
+        this._md5cycle(state, tail);
+        return this._md5rhex(state[0]) + this._md5rhex(state[1]) + this._md5rhex(state[2]) + this._md5rhex(state[3]);
+    }
+    
+    _md5cycle(x, k) {
+        let a = x[0], b = x[1], c = x[2], d = x[3];
+        a = this._md5ff(a,b,c,d,k[0],7,-680876936); d = this._md5ff(d,a,b,c,k[1],12,-389564586);
+        c = this._md5ff(c,d,a,b,k[2],17,606105819); b = this._md5ff(b,c,d,a,k[3],22,-1044525330);
+        a = this._md5ff(a,b,c,d,k[4],7,-176418897); d = this._md5ff(d,a,b,c,k[5],12,1200080426);
+        c = this._md5ff(c,d,a,b,k[6],17,-1473231341); b = this._md5ff(b,c,d,a,k[7],22,-45705983);
+        a = this._md5ff(a,b,c,d,k[8],7,1770035416); d = this._md5ff(d,a,b,c,k[9],12,-1958414417);
+        c = this._md5ff(c,d,a,b,k[10],17,-42063); b = this._md5ff(b,c,d,a,k[11],22,-1990404162);
+        a = this._md5ff(a,b,c,d,k[12],7,1804603682); d = this._md5ff(d,a,b,c,k[13],12,-40341101);
+        c = this._md5ff(c,d,a,b,k[14],17,-1502002290); b = this._md5ff(b,c,d,a,k[15],22,1236535329);
+        a = this._md5gg(a,b,c,d,k[1],5,-165796510); d = this._md5gg(d,a,b,c,k[6],9,-1069501632);
+        c = this._md5gg(c,d,a,b,k[11],14,643717713); b = this._md5gg(b,c,d,a,k[0],20,-373897302);
+        a = this._md5gg(a,b,c,d,k[5],5,-701558691); d = this._md5gg(d,a,b,c,k[10],9,38016083);
+        c = this._md5gg(c,d,a,b,k[15],14,-660478335); b = this._md5gg(b,c,d,a,k[4],20,-405537848);
+        a = this._md5gg(a,b,c,d,k[9],5,568446438); d = this._md5gg(d,a,b,c,k[14],9,-1019803690);
+        c = this._md5gg(c,d,a,b,k[3],14,-187363961); b = this._md5gg(b,c,d,a,k[8],20,1163531501);
+        a = this._md5gg(a,b,c,d,k[13],5,-1444681467); d = this._md5gg(d,a,b,c,k[2],9,-51403784);
+        c = this._md5gg(c,d,a,b,k[7],14,1735328473); b = this._md5gg(b,c,d,a,k[12],20,-1926607734);
+        a = this._md5hh(a,b,c,d,k[5],4,-378558); d = this._md5hh(d,a,b,c,k[8],11,-2022574463);
+        c = this._md5hh(c,d,a,b,k[11],16,1839030562); b = this._md5hh(b,c,d,a,k[14],23,-35309556);
+        a = this._md5hh(a,b,c,d,k[1],4,-1530992060); d = this._md5hh(d,a,b,c,k[4],11,1272893353);
+        c = this._md5hh(c,d,a,b,k[7],16,-155497632); b = this._md5hh(b,c,d,a,k[10],23,-1094730640);
+        a = this._md5hh(a,b,c,d,k[13],4,681279174); d = this._md5hh(d,a,b,c,k[0],11,-358537222);
+        c = this._md5hh(c,d,a,b,k[3],16,-722521979); b = this._md5hh(b,c,d,a,k[6],23,76029189);
+        a = this._md5hh(a,b,c,d,k[9],4,-640364487); d = this._md5hh(d,a,b,c,k[12],11,-421815835);
+        c = this._md5hh(c,d,a,b,k[15],16,530742520); b = this._md5hh(b,c,d,a,k[2],23,-995338651);
+        a = this._md5ii(a,b,c,d,k[0],6,-198630844); d = this._md5ii(d,a,b,c,k[7],10,1126891415);
+        c = this._md5ii(c,d,a,b,k[14],15,-1416354905); b = this._md5ii(b,c,d,a,k[5],21,-57434055);
+        a = this._md5ii(a,b,c,d,k[12],6,1700485571); d = this._md5ii(d,a,b,c,k[3],10,-1894986606);
+        c = this._md5ii(c,d,a,b,k[10],15,-1051523); b = this._md5ii(b,c,d,a,k[1],21,-2054922799);
+        a = this._md5ii(a,b,c,d,k[8],6,1873313359); d = this._md5ii(d,a,b,c,k[15],10,-30611744);
+        c = this._md5ii(c,d,a,b,k[6],15,-1560198380); b = this._md5ii(b,c,d,a,k[13],21,1309151649);
+        a = this._md5ii(a,b,c,d,k[4],6,-145523070); d = this._md5ii(d,a,b,c,k[11],10,-1120210379);
+        c = this._md5ii(c,d,a,b,k[2],15,718787259); b = this._md5ii(b,c,d,a,k[9],21,-343485551);
+        x[0] = this._md5add32(a, x[0]); x[1] = this._md5add32(b, x[1]);
+        x[2] = this._md5add32(c, x[2]); x[3] = this._md5add32(d, x[3]);
+    }
+    
+    _md5cmn(q, a, b, x, s, t) { return this._md5add32((this._md5add32(this._md5add32(a, q), this._md5add32(x, t)) << s) | (this._md5add32(this._md5add32(a, q), this._md5add32(x, t)) >>> (32 - s)), b); }
+    _md5ff(a,b,c,d,x,s,t) { return this._md5cmn((b & c) | ((~b) & d), a, b, x, s, t); }
+    _md5gg(a,b,c,d,x,s,t) { return this._md5cmn((b & d) | (c & (~d)), a, b, x, s, t); }
+    _md5hh(a,b,c,d,x,s,t) { return this._md5cmn(b ^ c ^ d, a, b, x, s, t); }
+    _md5ii(a,b,c,d,x,s,t) { return this._md5cmn(c ^ (b | (~d)), a, b, x, s, t); }
+    _md5blk(s) { const b = []; for (let i = 0; i < 64; i += 4) b[i>>2] = s.charCodeAt(i) + (s.charCodeAt(i+1) << 8) + (s.charCodeAt(i+2) << 16) + (s.charCodeAt(i+3) << 24); return b; }
+    _md5rhex(n) { let s = ''; for (let j = 0; j < 4; j++) s += '0123456789abcdef'.charAt((n >> (j*8+4)) & 0x0F) + '0123456789abcdef'.charAt((n >> (j*8)) & 0x0F); return s; }
+    _md5add32(a, b) { return (a + b) & 0xFFFFFFFF; }
+    
+    _loadCover(img) {
         const picId = img.dataset.picid;
         if (!picId) return;
-        for (let attempt = 1; attempt <= 2; attempt++) {
-            try {
-                const resp = await fetch(`${MusicPlayer.GD_API}?types=pic&source=netease&id=${picId}&size=300`);
-                if (resp.ok) {
-                    const d = await resp.json();
-                    if (d.url) { img.src = d.url; return; }
-                }
-            } catch (e) {}
-            if (attempt < 2) await new Promise(r => setTimeout(r, 600));
-        }
+        img.src = this._neteaseCoverUrl(picId, 300);
     }
     
     async playSearchResult(track) {
