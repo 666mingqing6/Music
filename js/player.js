@@ -105,9 +105,7 @@ class MusicPlayer {
             btnVolume: $('btn-volume'),
             volumeSlider: $('volume-slider'),
             volumeFill: $('volume-fill'),
-            btnLyrics: $('btn-lyrics'),
-            btnQueue: $('btn-queue'),
-            
+
             // 面板
             panelTabs: document.querySelectorAll('.panel-tab'),
             panelLyrics: $('panel-lyrics'),
@@ -684,31 +682,6 @@ class MusicPlayer {
         }
     }
     
-    smoothScrollLyric(container, targetTop) {
-        if (this.lyricScrollRAF) {
-            cancelAnimationFrame(this.lyricScrollRAF);
-        }
-        
-        const startTop = container.scrollTop;
-        const distance = targetTop - startTop;
-        const duration = 400;
-        const startTime = performance.now();
-        
-        const animate = (currentTime) => {
-            const elapsed = currentTime - startTime;
-            const progress = Math.min(elapsed / duration, 1);
-            const ease = 1 - Math.pow(1 - progress, 3);
-            
-            container.scrollTop = startTop + distance * ease;
-            
-            if (progress < 1) {
-                this.lyricScrollRAF = requestAnimationFrame(animate);
-            }
-        };
-        
-        this.lyricScrollRAF = requestAnimationFrame(animate);
-    }
-    
     pauseLyricScroll(isTouch = false) {
         this.isLyricScrolling = true;
         clearTimeout(this.lyricScrollTimer);
@@ -1245,7 +1218,7 @@ class MusicPlayer {
             
             const audioUrl = urlResp.url || '';
             if (!audioUrl) {
-                console.warn('无法获取播放地址');
+                alert('无法获取播放地址，请稍后重试');
                 return;
             }
             
@@ -1261,10 +1234,11 @@ class MusicPlayer {
             
             this.playlist.push(newTrack);
             const newIndex = this.playlist.length - 1;
+            // 加入播放路径
+            this.playPath.push(newIndex);
+            this.pathPos = this.playPath.length - 1;
             this.renderQueue();
             this.loadTrack(newIndex, true);
-            
-            // 切换到播放列表
             this.switchPanel('queue');
         } catch (e) {
             console.error('搜索播放失败:', e);
