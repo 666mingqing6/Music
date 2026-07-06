@@ -1164,7 +1164,6 @@ class MusicPlayer {
             if (attempt < 2) await new Promise(r => setTimeout(r, 500));
         }
     }
-    }
     
     async playSearchResult(track) {
         try {
