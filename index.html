@@ -242,7 +242,7 @@
 
     <script src="./config.js"></script>
     <script>
-        // 无论 player.js 是否加载成功，2秒后强制隐藏加载遮罩
+        // 兜底机制：无论 player.js 是否加载成功，1.5秒后强制隐藏加载遮罩
         setTimeout(function() {
             var overlay = document.getElementById('loading-overlay');
             if (overlay) overlay.classList.add('hidden');

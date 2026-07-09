@@ -23,6 +23,7 @@ class MusicPlayer {
 
         // 封面缓存
         this.coverCache = new Map();
+        this.coverCacheLimit = 200; // 最多缓存 200 个封面 URL，防止长时间使用后内存膨胀
 
         // 播放路径（一个确定性数组 + 当前位置指针）
         this.playPath = [];
@@ -264,24 +265,21 @@ class MusicPlayer {
             this.els.btnCloseQueue.onclick = () => this.closeMobileQueue();
         }
         
-        // 在线搜索（桌面端）
+        // 在线搜索（桌面端 + 移动端）：防抖避免快速重复请求
+        this._searchDebounce = null;
+        const handleSearchEnter = (e, mobile) => {
+            if (e.key !== 'Enter') return;
+            const query = e.target.value.trim();
+            if (!query) return;
+            clearTimeout(this._searchDebounce);
+            // 200ms 防抖：若用户连按回车，合并为最后一次
+            this._searchDebounce = setTimeout(() => this.searchOnline(query, mobile), 200);
+        };
         if (this.els.searchInput) {
-            this.els.searchInput.onkeydown = e => {
-                if (e.key === 'Enter') {
-                    const query = e.target.value.trim();
-                    if (query) this.searchOnline(query);
-                }
-            };
+            this.els.searchInput.onkeydown = e => handleSearchEnter(e, false);
         }
-        
-        // 在线搜索（移动端）
         if (this.els.mobileSearchInput) {
-            this.els.mobileSearchInput.onkeydown = e => {
-                if (e.key === 'Enter') {
-                    const query = e.target.value.trim();
-                    if (query) this.searchOnline(query, true);
-                }
-            };
+            this.els.mobileSearchInput.onkeydown = e => handleSearchEnter(e, true);
         }
         if (this.els.btnCloseSearch) {
             this.els.btnCloseSearch.onclick = () => this.closeMobileSearch();
@@ -368,10 +366,14 @@ class MusicPlayer {
         const coverUrl = await this.getHighQualityCover(track.pic || track.cover);
         this.els.coverArt.src = coverUrl;
         this.els.bgCover.style.backgroundImage = `url(${coverUrl})`;
-        
+
         // 缓存封面 URL 供列表缩略图使用
         this.coverUrlCache.set(this.currentIndex, coverUrl);
-        
+
+        // 标记封面已解析，resolveAllCovers 不再重复请求
+        this._resolvedCovers = this._resolvedCovers || new Set();
+        this._resolvedCovers.add(this.currentIndex);
+
         // 更新当前播放项的缩略图
         const currentCoverImg = document.querySelector(`.queue-item[data-idx="${this.currentIndex}"] .queue-item-cover`);
         if (currentCoverImg) {
@@ -419,10 +421,13 @@ class MusicPlayer {
     // 批量解析封面 URL（控制并发数=5，避免 API 限流）
     async resolveAllCovers() {
         const CONCURRENCY = 5;
+        // 跳过已解析的索引（避免与 loadTrack 重复请求）
+        this._resolvedCovers = this._resolvedCovers || new Set();
         for (let i = 0; i < this.playlist.length; i += CONCURRENCY) {
             const batch = this.playlist.slice(i, i + CONCURRENCY);
             await Promise.all(batch.map((track, batchIdx) => {
                 const idx = i + batchIdx;
+                if (this._resolvedCovers.has(idx)) return Promise.resolve();
                 return this.resolveCover(track, idx);
             }));
         }
@@ -432,30 +437,37 @@ class MusicPlayer {
     async resolveCover(track, idx) {
         const picUrl = track.pic || track.cover || '';
         if (!picUrl) return;
-        
-        // 检测是否为代理 URL（自建 Meting API 或第三方），需要预解析真实地址
-        const isProxy = picUrl.includes('type=pic') || picUrl.includes('?server=') || picUrl.includes('?source=') || picUrl.includes('/meting/') || picUrl.includes('/api.php');
-        const isNeteaseCDN = picUrl.includes('music.126.net') || picUrl.includes('.126.net');
-        
+
         let finalUrl = picUrl;
-        if (isProxy || isNeteaseCDN) {
-            try {
-                const controller = new AbortController();
-                const timer = setTimeout(() => controller.abort(), 8000);
-                const resp = await fetch(picUrl, {
-                    redirect: 'follow',
-                    referrerPolicy: 'no-referrer',
-                    signal: controller.signal
-                });
-                clearTimeout(timer);
-                finalUrl = resp.url || picUrl;
-            } catch (e) {
-                // 解析失败，保留原始 URL —— <img> 上的 referrerpolicy="no-referrer" 作为兜底
+
+        // 网易云 CDN URL 不需要解析（已经是最终地址），但需要补上尺寸参数
+        const isNeteaseCDN = /p\d+\.music\.126\.net|music\.126\.net/.test(picUrl);
+        if (isNeteaseCDN) {
+            if (!/param=\d+[xy]\d+/i.test(finalUrl)) {
+                finalUrl += (finalUrl.includes('?') ? '&' : '?') + 'param=300y300';
+            }
+        } else {
+            // 检测是否为代理 URL（自建 Meting API 或第三方），需要预解析真实地址
+            const isProxy = picUrl.includes('type=pic') || picUrl.includes('?server=') || picUrl.includes('?source=') || picUrl.includes('/meting/') || picUrl.includes('/api.php');
+            if (isProxy) {
+                try {
+                    const controller = new AbortController();
+                    const timer = setTimeout(() => controller.abort(), 8000);
+                    const resp = await fetch(picUrl, {
+                        redirect: 'follow',
+                        referrerPolicy: 'no-referrer',
+                        signal: controller.signal
+                    });
+                    clearTimeout(timer);
+                    finalUrl = resp.url || picUrl;
+                } catch (e) {
+                    // 解析失败，保留原始 URL —— <img> 上的 referrerpolicy="no-referrer" 作为兜底
+                }
             }
         }
-        
+
         this.coverUrlCache.set(idx, finalUrl);
-        
+
         // 实时更新已渲染的列表缩略图（如果 DOM 已存在）
         const coverImg = document.querySelector(`.queue-item[data-idx="${idx}"] .queue-item-cover`);
         if (coverImg) {
@@ -502,6 +514,11 @@ class MusicPlayer {
         }
         
         this.coverCache.set(url, finalUrl);
+        // LRU 驱逐：超出容量时移除最早插入的项
+        if (this.coverCache.size > this.coverCacheLimit) {
+            const firstKey = this.coverCache.keys().next().value;
+            this.coverCache.delete(firstKey);
+        }
         return finalUrl;
     }
     
@@ -669,8 +686,10 @@ class MusicPlayer {
         if (desktopLines[newIndex]) desktopLines[newIndex].classList.add('active');
         if (prevIndex >= 0 && desktopLines[prevIndex]) desktopLines[prevIndex].classList.remove('active');
 
-        // 桌面端滚动
-        if (desktopLines[newIndex] && this.els.lyricsScroll) {
+        // 桌面端滚动：节流到每 300ms 最多一次，避免每帧滚动造成卡顿
+        const now = Date.now();
+        if (desktopLines[newIndex] && this.els.lyricsScroll && (!this._lastScrollTime || now - this._lastScrollTime > 300)) {
+            this._lastScrollTime = now;
             desktopLines[newIndex].scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
 
@@ -683,7 +702,8 @@ class MusicPlayer {
 
             const mobileActiveLine = mobileLines[newIndex];
             const mobileScroll = document.getElementById('mobile-lyrics-scroll');
-            if (mobileActiveLine && mobileScroll) {
+            if (mobileActiveLine && mobileScroll && (!this._lastMobileScrollTime || now - this._lastMobileScrollTime > 300)) {
+                this._lastMobileScrollTime = now;
                 mobileActiveLine.scrollIntoView({ behavior: 'smooth', block: 'center' });
             }
         }
@@ -759,9 +779,10 @@ class MusicPlayer {
             const index = this.playPath[this.pathPos];
             this.loadTrack(index, this.isPlaying);
         } else if (this.playMode === 'shuffle') {
-            // 路径开头：重新随机一首
+            // 路径开头：重置为仅含当前曲目，然后选一首新歌
+            // 这样能避免 playPath 无限增长，且按下 prev 后可以再次 prev 回到原曲
             const index = this._getLeastPlayedIndex(this.currentIndex);
-            this.playPath.unshift(index);
+            this.playPath = [index];
             this.pathPos = 0;
             this.loadTrack(index, this.isPlaying);
         } else {
@@ -990,13 +1011,15 @@ class MusicPlayer {
         const html = this.playlist.map((track, idx) => {
             // 优先使用缓存的封面 URL（已解析的真实 URL）
             let coverUrl = this.coverUrlCache.get(idx) || track.pic || track.cover || '';
+            // 空 URL 时不写 src，避免回退到当前页 URL
+            const imgSrc = coverUrl ? `src="${coverUrl}"` : '';
             // 使用渐变背景作为占位，更优雅
             const placeholderStyle = `background: linear-gradient(135deg, #3a3a3a 0%, #2a2a2a 100%);`;
             return `
             <div class="queue-item" data-idx="${idx}">
                 <span class="queue-item-index">${(idx + 1).toString().padStart(2, '0')}</span>
                 <div class="queue-item-cover-wrap" style="${placeholderStyle}">
-                    <img class="queue-item-cover" src="${coverUrl}" alt="" referrerpolicy="no-referrer" onload="this.style.opacity=1;this.style.display=''" onerror="this.style.opacity='0'">
+                    <img class="queue-item-cover" ${imgSrc} alt="" referrerpolicy="no-referrer" onload="this.style.opacity=1;this.style.display=''" onerror="this.style.opacity='0'">
                     <span class="queue-item-cover-placeholder">♪</span>
                 </div>
                 <div class="queue-item-info">
@@ -1251,13 +1274,20 @@ class MusicPlayer {
     
     async playSearchResult(track) {
         try {
-            // 并行获取 URL 和歌词
+            // 并行获取 URL 和歌词（带超时控制，避免 API 挂起时永久卡住）
             const urlApi = `${MusicPlayer.GD_API}?types=url&source=${track.source || 'netease'}&id=${track.id}&br=320`;
             const lyricApi = `${MusicPlayer.GD_API}?types=lyric&source=${track.source || 'netease'}&id=${track.lyric_id || track.id}`;
-            
+
+            const fetchWithTimeout = (url, ms = 10000) => {
+                const controller = new AbortController();
+                const timer = setTimeout(() => controller.abort(), ms);
+                return fetch(url, { signal: controller.signal })
+                    .finally(() => clearTimeout(timer));
+            };
+
             const [urlResp, lrcResp] = await Promise.all([
-                fetch(urlApi).then(r => r.json()).catch(() => ({ url: '' })),
-                fetch(lyricApi).then(r => r.json()).catch(() => ({ lyric: '' }))
+                fetchWithTimeout(urlApi).then(r => r.json()).catch(() => ({ url: '' })),
+                fetchWithTimeout(lyricApi).then(r => r.json()).catch(() => ({ lyric: '' }))
             ]);
             
             const audioUrl = urlResp.url || '';
@@ -1358,10 +1388,9 @@ class MusicPlayer {
         if (this.els.mobileSearchDrawer) {
             this.els.mobileSearchDrawer.classList.remove('active');
         }
-        const playerBtn = document.querySelector('.nav-btn[data-view="player"]');
-        if (playerBtn) playerBtn.classList.add('active');
+        // 统一设置 nav-btn 激活态
         document.querySelectorAll('.nav-btn').forEach(btn => {
-            if (btn.dataset.view !== 'player') btn.classList.remove('active');
+            btn.classList.toggle('active', btn.dataset.view === 'player');
         });
     }
     
@@ -1369,14 +1398,16 @@ class MusicPlayer {
         if (this.els.mobileQueueDrawer) {
             this.els.mobileQueueDrawer.classList.remove('active');
         }
-        document.querySelector('.nav-btn[data-view="player"]')?.classList.add('active');
-        document.querySelector('.nav-btn[data-view="queue"]')?.classList.remove('active');
+        document.querySelectorAll('.nav-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.view === 'player');
+        });
     }
     
     closeMobileLyrics() {
         this.els.mobileLyricsView.classList.remove('active');
-        document.querySelector('.nav-btn[data-view="player"]')?.classList.add('active');
-        document.querySelector('.nav-btn[data-view="lyrics"]')?.classList.remove('active');
+        document.querySelectorAll('.nav-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.view === 'player');
+        });
     }
     
     filterMobileQueue(keyword) {
@@ -1412,27 +1443,28 @@ class MusicPlayer {
     
     handleKeyboard(e) {
         if (e.target.tagName === 'INPUT') return;
-        
+
         switch (e.code) {
             case 'Space':
                 e.preventDefault();
                 this.togglePlay();
                 break;
             case 'ArrowLeft':
-                this.els.audio.currentTime -= 5;
+                this.els.audio.currentTime = Math.max(0, this.els.audio.currentTime - 5);
                 break;
             case 'ArrowRight':
-                this.els.audio.currentTime += 5;
+                this.els.audio.currentTime = Math.min(
+                    this.els.audio.duration || this.els.audio.currentTime,
+                    this.els.audio.currentTime + 5
+                );
                 break;
             case 'ArrowUp':
                 e.preventDefault();
                 this.setVolume(Math.min(100, this.els.audio.volume * 100 + 5));
-                this.els.volumeSlider.value = this.els.audio.volume * 100;
                 break;
             case 'ArrowDown':
                 e.preventDefault();
                 this.setVolume(Math.max(0, this.els.audio.volume * 100 - 5));
-                this.els.volumeSlider.value = this.els.audio.volume * 100;
                 break;
         }
     }
