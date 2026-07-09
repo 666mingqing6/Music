@@ -1103,6 +1103,7 @@ input[type="range"] {
     bottom: 0;
     z-index: 300;
     background: var(--color-bg);
+    display: flex;
     flex-direction: column;
     transform: translateY(100%);
     visibility: hidden;
@@ -1185,6 +1186,7 @@ input[type="range"] {
     bottom: 0;
     z-index: 300;
     background: var(--color-bg);
+    display: flex;
     flex-direction: column;
     transform: translateY(100%);
     visibility: hidden;
