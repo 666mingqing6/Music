@@ -762,7 +762,21 @@ class MusicPlayer {
         }
         return candidates[Math.floor(Math.random() * candidates.length)];
     }
-    
+
+    // 限制播放路径长度，避免长时间使用后无限增长（仅裁剪已播放过的历史，不影响当前位置）
+    _capPlayPath() {
+        const MAX = 200;
+        if (this.playPath.length <= MAX) return;
+        const drop = Math.min(this.playPath.length - MAX, this.pathPos);
+        if (drop > 0) {
+            this.playPath.splice(0, drop);
+            this.pathPos -= drop;
+        }
+        if (this.playPath.length > MAX) {
+            this.playPath.length = MAX;
+        }
+    }
+
     play() {
         this.els.audio.play().catch(e => console.warn('播放失败:', e));
     }
@@ -786,6 +800,7 @@ class MusicPlayer {
             const index = this._getLeastPlayedIndex(this.currentIndex);
             this.playPath.unshift(index);
             this.pathPos = 0;
+            this._capPlayPath();
             this.loadTrack(index, this.isPlaying);
         } else {
             // 顺序/单曲模式：回到上一曲
@@ -807,6 +822,7 @@ class MusicPlayer {
                 index = this._getLeastPlayedIndex(this.currentIndex);
                 this.playPath.push(index);
                 this.pathPos++;
+                this._capPlayPath();
             }
         } else {
             index = this.currentIndex + 1;
@@ -858,6 +874,7 @@ class MusicPlayer {
                     index = this._getLeastPlayedIndex(this.currentIndex);
                     this.playPath.push(index);
                     this.pathPos++;
+                    this._capPlayPath();
                 }
             } else {
                 index = this.currentIndex + 1;
@@ -914,7 +931,7 @@ class MusicPlayer {
     
     updateProgress() {
         const { currentTime, duration } = this.els.audio;
-        if (isNaN(duration)) return;
+        if (!isFinite(duration) || duration <= 0) return;
         
         const percent = (currentTime / duration) * 100;
         this.els.progressFill.style.width = percent + '%';
@@ -935,7 +952,7 @@ class MusicPlayer {
         if (!audio.buffered || audio.buffered.length === 0) return;
         
         const duration = audio.duration;
-        if (isNaN(duration)) return;
+        if (!isFinite(duration) || duration <= 0) return;
         
         // 获取已缓冲的最大时间
         const bufferedEnd = audio.buffered.end(audio.buffered.length - 1);
@@ -1301,6 +1318,7 @@ class MusicPlayer {
                 // 已存在，直接播放
                 this.playPath.push(existingIdx);
                 this.pathPos = this.playPath.length - 1;
+                this._capPlayPath();
                 this.loadTrack(existingIdx, true);
                 this.showToast(`已在列表中: ${track.name}`);
                 if (window.innerWidth > 768) this.switchPanel('queue');
@@ -1323,6 +1341,7 @@ class MusicPlayer {
             // 加入播放路径
             this.playPath.push(newIndex);
             this.pathPos = this.playPath.length - 1;
+            this._capPlayPath();
             this.renderQueue();
             this.loadTrack(newIndex, true);
             if (window.innerWidth > 768) this.switchPanel('queue');
@@ -1448,11 +1467,15 @@ class MusicPlayer {
                 this.togglePlay();
                 break;
             case 'ArrowLeft':
-                this.els.audio.currentTime -= 5;
+                this.els.audio.currentTime = Math.max(0, this.els.audio.currentTime - 5);
                 break;
-            case 'ArrowRight':
-                this.els.audio.currentTime += 5;
+            case 'ArrowRight': {
+                const d = this.els.audio.duration;
+                this.els.audio.currentTime = isFinite(d) && d > 0
+                    ? Math.min(d, this.els.audio.currentTime + 5)
+                    : this.els.audio.currentTime + 5;
                 break;
+            }
             case 'ArrowUp':
                 e.preventDefault();
                 this.setVolume(Math.min(100, this.els.audio.volume * 100 + 5));
