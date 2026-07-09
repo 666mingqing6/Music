@@ -4,3 +4,15 @@
 musiclist.json
 node_modules
 upload.sh
+
+# Python
+__pycache__/
+*.pyc
+
+# Deduplicator sample data (开发用)
+Deduplicator/sample_data/
+
+# 开发工具输出
+LocalMusicFiles/
+download.log
+local_files_manifest.json

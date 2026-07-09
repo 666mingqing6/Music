@@ -12,31 +12,34 @@ class MusicPlayer {
         this.playMode = 'shuffle'; // shuffle, loop, repeat-one
         this.lyrics = [];
         this.currentLyricIndex = -1;
-        
+
         // 封面 URL 缓存（用于列表缩略图）
         this.coverUrlCache = new Map();
-        
+
         // 歌词滚动状态
         this.isLyricScrolling = false;
         this.lyricScrollTimer = null;
         this.lyricScrollRAF = null;
-        
+
         // 封面缓存
         this.coverCache = new Map();
-        
+
         // 播放路径（一个确定性数组 + 当前位置指针）
         this.playPath = [];
         this.pathPos = -1;
-        
+
         // 播放次数统计（平均随机用，localStorage 持久化）
         this.playCount = this._loadPlayCount();
-        
+
         // API
         this.apiUrl = 'https://meting-api.646474.xyz/?server=:server&type=:type&id=:id&r=:r';
-        
+
         // DOM 元素缓存
         this.els = {};
-        
+
+        // Toast 队列
+        this._toastContainer = null;
+
         // 初始化
         this.init();
     }
@@ -295,7 +298,8 @@ class MusicPlayer {
     }
     
     initVolume() {
-        const volume = 0.8;
+        const saved = this._loadVolume();
+        const volume = (saved !== null && saved >= 0 && saved <= 1) ? saved : 0.8;
         this.els.audio.volume = volume;
         this.els.volumeSlider.value = volume * 100;
         this.updateVolumeIcon(volume);
@@ -643,42 +647,45 @@ class MusicPlayer {
     
     updateLyrics(time) {
         if (this.lyrics.length === 0 || this.isLyricScrolling) return;
-        
-        let newIndex = 0;
-        for (let i = 0; i < this.lyrics.length; i++) {
-            if (time >= this.lyrics[i].time) {
-                newIndex = i;
+
+        // 二分查找当前歌词行
+        let lo = 0, hi = this.lyrics.length - 1, newIndex = 0;
+        while (lo <= hi) {
+            const mid = (lo + hi) >> 1;
+            if (this.lyrics[mid].time <= time) {
+                newIndex = mid;
+                lo = mid + 1;
             } else {
-                break;
+                hi = mid - 1;
             }
         }
-        
+
         if (newIndex === this.currentLyricIndex) return;
+        const prevIndex = this.currentLyricIndex;
         this.currentLyricIndex = newIndex;
-        
+
         // 桌面端
         const desktopLines = this.els.lyricsContainer.querySelectorAll('.lyric-line');
-        desktopLines.forEach((el, idx) => {
-            el.classList.toggle('active', idx === newIndex);
-        });
-        
-        // 移动端
-        const mobileLines = this.els.mobileLyricsContainer.querySelectorAll('.lyric-line');
-        mobileLines.forEach((el, idx) => {
-            el.classList.toggle('active', idx === newIndex);
-        });
-        
-        // 桌面端滚动 - 使用 scrollIntoView 实现居中
-        const activeLine = desktopLines[newIndex];
-        if (activeLine && this.els.lyricsScroll) {
-            activeLine.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        if (desktopLines[newIndex]) desktopLines[newIndex].classList.add('active');
+        if (prevIndex >= 0 && desktopLines[prevIndex]) desktopLines[prevIndex].classList.remove('active');
+
+        // 桌面端滚动
+        if (desktopLines[newIndex] && this.els.lyricsScroll) {
+            desktopLines[newIndex].scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
-        
-        // 移动端滚动
-        const mobileActiveLine = mobileLines[newIndex];
-        const mobileScroll = document.getElementById('mobile-lyrics-scroll');
-        if (mobileActiveLine && mobileScroll) {
-            mobileActiveLine.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+        // 移动端（仅在可见时更新 DOM）
+        const mobileLyricsView = this.els.mobileLyricsView;
+        if (mobileLyricsView && mobileLyricsView.classList.contains('active')) {
+            const mobileLines = this.els.mobileLyricsContainer.querySelectorAll('.lyric-line');
+            if (mobileLines[newIndex]) mobileLines[newIndex].classList.add('active');
+            if (prevIndex >= 0 && mobileLines[prevIndex]) mobileLines[prevIndex].classList.remove('active');
+
+            const mobileActiveLine = mobileLines[newIndex];
+            const mobileScroll = document.getElementById('mobile-lyrics-scroll');
+            if (mobileActiveLine && mobileScroll) {
+                mobileActiveLine.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
         }
     }
     
@@ -706,8 +713,16 @@ class MusicPlayer {
         } catch { return {}; }
     }
     
-    // 保存播放次数
+    // 保存播放次数（自动清理：超过 500 条时清除旧数据）
     _savePlayCount() {
+        const keys = Object.keys(this.playCount);
+        if (keys.length > 500) {
+            // 保留最近 200 条
+            const recent = keys.slice(-200);
+            const cleaned = {};
+            recent.forEach(k => { cleaned[k] = this.playCount[k]; });
+            this.playCount = cleaned;
+        }
         localStorage.setItem('mq_play_count', JSON.stringify(this.playCount));
     }
     
@@ -742,6 +757,17 @@ class MusicPlayer {
         if (this.pathPos > 0) {
             this.pathPos--;
             const index = this.playPath[this.pathPos];
+            this.loadTrack(index, this.isPlaying);
+        } else if (this.playMode === 'shuffle') {
+            // 路径开头：重新随机一首
+            const index = this._getLeastPlayedIndex(this.currentIndex);
+            this.playPath.unshift(index);
+            this.pathPos = 0;
+            this.loadTrack(index, this.isPlaying);
+        } else {
+            // 顺序/单曲模式：回到上一曲
+            let index = this.currentIndex - 1;
+            if (index < 0) index = this.playlist.length - 1;
             this.loadTrack(index, this.isPlaying);
         }
     }
@@ -925,6 +951,7 @@ class MusicPlayer {
         const volume = value / 100;
         this.els.audio.volume = volume;
         this.updateVolumeIcon(volume);
+        this._saveVolume(volume);
     }
     
     updateVolumeIcon(volume) {
@@ -1010,9 +1037,26 @@ class MusicPlayer {
     }
     
     updateQueueHighlight() {
-        this.els.queueList.querySelectorAll('.queue-item').forEach((el, idx) => {
-            el.classList.toggle('active', idx === this.currentIndex);
+        // 桌面端：只更新新旧 active 状态
+        const desktopItems = this.els.queueList.querySelectorAll('.queue-item');
+        desktopItems.forEach((el, idx) => {
+            if (idx === this.currentIndex) {
+                el.classList.add('active');
+            } else if (el.classList.contains('active')) {
+                el.classList.remove('active');
+            }
         });
+        // 移动端
+        if (this.els.mobileQueueList) {
+            const mobileItems = this.els.mobileQueueList.querySelectorAll('.queue-item');
+            mobileItems.forEach((el, idx) => {
+                if (idx === this.currentIndex) {
+                    el.classList.add('active');
+                } else if (el.classList.contains('active')) {
+                    el.classList.remove('active');
+                }
+            });
+        }
     }
     
     filterQueue(keyword) {
@@ -1218,10 +1262,22 @@ class MusicPlayer {
             
             const audioUrl = urlResp.url || '';
             if (!audioUrl) {
-                alert('无法获取播放地址，请稍后重试');
+                this.showToast('无法获取播放地址，请稍后重试', 'error');
                 return;
             }
             
+            // 去重：基于 id 查找是否已存在
+            const existingIdx = this.playlist.findIndex(t => t._searchId === track.id);
+            if (existingIdx !== -1) {
+                // 已存在，直接播放
+                this.playPath.push(existingIdx);
+                this.pathPos = this.playPath.length - 1;
+                this.loadTrack(existingIdx, true);
+                this.showToast(`已在列表中: ${track.name}`);
+                if (window.innerWidth > 768) this.switchPanel('queue');
+                return;
+            }
+
             // 添加到播放列表并播放
             const newTrack = {
                 name: track.name,
@@ -1229,7 +1285,8 @@ class MusicPlayer {
                 url: audioUrl,
                 pic: this._neteaseCoverUrl(track.pic_id, 500),
                 lrc: lrcResp.lyric || lrcResp.tlyric || '',
-                source: track.source
+                source: track.source,
+                _searchId: track.id  // 用于去重标记
             };
             
             this.playlist.push(newTrack);
@@ -1239,9 +1296,10 @@ class MusicPlayer {
             this.pathPos = this.playPath.length - 1;
             this.renderQueue();
             this.loadTrack(newIndex, true);
-            this.switchPanel('queue');
+            if (window.innerWidth > 768) this.switchPanel('queue');
         } catch (e) {
             console.error('搜索播放失败:', e);
+            this.showToast('搜索播放失败，请重试', 'error');
         }
     }
     
@@ -1383,6 +1441,9 @@ class MusicPlayer {
     
     handleError(e) {
         console.error('音频加载错误:', e);
+        const track = this.playlist[this.currentIndex];
+        const name = track ? (track.name || track.title || '未知歌曲') : '未知歌曲';
+        this.showToast(`播放失败: ${name}`, 'error');
     }
     
     // ========== 工具方法 ==========
@@ -1398,6 +1459,46 @@ class MusicPlayer {
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
+    }
+
+    // ========== Toast 提示 ==========
+
+    showToast(message, type = 'info', duration = 2500) {
+        if (!this._toastContainer) {
+            this._toastContainer = document.createElement('div');
+            this._toastContainer.id = 'toast-container';
+            document.body.appendChild(this._toastContainer);
+        }
+
+        const toast = document.createElement('div');
+        toast.className = `toast${type !== 'info' ? ' toast-' + type : ''}`;
+        toast.textContent = message;
+        this._toastContainer.appendChild(toast);
+
+        // 触发动画
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => toast.classList.add('show'));
+        });
+
+        setTimeout(() => {
+            toast.classList.remove('show');
+            setTimeout(() => toast.remove(), 300);
+        }, duration);
+    }
+
+    // ========== 音量持久化 ==========
+
+    _loadVolume() {
+        try {
+            const v = localStorage.getItem('mq_volume');
+            return v !== null ? parseFloat(v) : null;
+        } catch { return null; }
+    }
+
+    _saveVolume(volume) {
+        try {
+            localStorage.setItem('mq_volume', volume.toString());
+        } catch { /* ignore */ }
     }
 }
 
