@@ -28,6 +28,10 @@ class MusicPlayer {
         this.playPath = [];
         this.pathPos = -1;
 
+        // 加载令牌：用于丢弃快速切换歌曲时过期的异步结果，避免竞态
+        this._loadId = 0;
+        this._lyricLoadId = 0;
+
         // 播放次数统计（平均随机用，localStorage 持久化）
         this.playCount = this._loadPlayCount();
 
@@ -217,7 +221,7 @@ class MusicPlayer {
             this.els.progressSlider.oninput = e => {
                 const percent = parseFloat(e.target.value);
                 const duration = this.els.audio.duration;
-                if (!isNaN(duration)) {
+                if (isFinite(duration) && duration > 0) {
                     this.els.audio.currentTime = (percent / 100) * duration;
                 }
             };
@@ -351,27 +355,32 @@ class MusicPlayer {
     }
     
     async loadTrack(index, autoPlay = false) {
-        if (index < 0 || index >= this.playlist.length) return;
-        
+        // 严格校验索引：过滤 undefined/NaN 等非法值（_getLeastPlayedIndex 在极端情况下可能返回 -1/undefined）
+        if (!Number.isInteger(index) || index < 0 || index >= this.playlist.length) return;
+
+        // 加载令牌：本次加载的标识，用于在 await 后判断是否已被更新的加载取代
+        const loadId = ++this._loadId;
         this.currentIndex = index;
         const track = this.playlist[index];
-        
+
         // 更新歌曲信息
         this.els.trackTitle.textContent = track.name || track.title || '未知歌曲';
         this.els.trackArtist.textContent = track.artist || track.author || '未知歌手';
-        
+
         // 移动端歌曲信息
         this.els.mobileTrackTitle.textContent = track.name || track.title || '未知歌曲';
         this.els.mobileTrackArtist.textContent = track.artist || track.author || '未知歌手';
-        
+
         // 加载封面
         const coverUrl = await this.getHighQualityCover(track.pic || track.cover);
+        // 若期间已切到其它歌曲，丢弃本次过期的封面结果
+        if (loadId !== this._loadId) return;
         this.els.coverArt.src = coverUrl;
         this.els.bgCover.style.backgroundImage = `url(${coverUrl})`;
-        
+
         // 缓存封面 URL 供列表缩略图使用
         this.coverUrlCache.set(this.currentIndex, coverUrl);
-        
+
         // 更新当前播放项的缩略图
         const currentCoverImg = document.querySelector(`.queue-item[data-idx="${this.currentIndex}"] .queue-item-cover`);
         if (currentCoverImg) {
@@ -379,26 +388,27 @@ class MusicPlayer {
             currentCoverImg.style.opacity = '1';
             currentCoverImg.style.display = '';
         }
-        
+
         // 记录播放次数（平均随机用）
         this.playCount[index] = (this.playCount[index] || 0) + 1;
         this._savePlayCount();
-        
+
         // 播放状态
         this.els.coverContainer.classList.toggle('playing', false);
-        
+
         // 加载音频
         this.els.audio.src = track.url;
-        
+
         // 加载歌词
         await this.loadLyrics(track.lrc);
-        
+        if (loadId !== this._loadId) return;
+
         // 更新列表高亮
         this.updateQueueHighlight();
-        
+
         // 更新 MediaSession
         this.updateMediaSession(track, coverUrl);
-        
+
         // 重置进度
         this.els.progressFill.style.width = '0%';
         if (this.els.progressSlider) {
@@ -406,11 +416,11 @@ class MusicPlayer {
         }
         this.els.timeCurrent.textContent = '0:00';
         this.els.timeTotal.textContent = '0:00';
-        
+
         // 重置歌词滚动
         this.currentLyricIndex = -1;
         this.els.lyricsScroll.scrollTop = 0;
-        
+
         if (autoPlay) {
             this.play();
         }
@@ -508,14 +518,16 @@ class MusicPlayer {
     // ========== 歌词处理 ==========
     
     async loadLyrics(source) {
+        // 歌词加载令牌：丢弃过期的异步歌词结果，避免快速切歌时旧歌词覆盖新歌词
+        const loadId = ++this._lyricLoadId;
         this.lyrics = [];
         this.currentLyricIndex = -1;
-        
+
         if (!source) {
             this.renderLyrics([{ time: 0, text: '暂无歌词', isPlaceholder: true }]);
             return;
         }
-        
+
         try {
             let lrcText = '';
             if (source.startsWith('http')) {
@@ -523,14 +535,17 @@ class MusicPlayer {
                 const timer = setTimeout(() => controller.abort(), 6000);
                 const response = await fetch(source, { signal: controller.signal });
                 clearTimeout(timer);
+                if (loadId !== this._lyricLoadId) return; // 已被新歌词加载取代
                 lrcText = await response.text();
             } else {
                 lrcText = source;
             }
-            
+
             this.parseLyrics(lrcText);
+            if (loadId !== this._lyricLoadId) return;
             this.renderLyrics(this.lyrics);
         } catch (error) {
+            if (loadId !== this._lyricLoadId) return;
             console.error('加载歌词失败:', error);
             this.renderLyrics([{ time: 0, text: '歌词加载失败', isPlaceholder: true }]);
         }
@@ -624,25 +639,17 @@ class MusicPlayer {
         
         this.els.lyricsContainer.innerHTML = html;
         this.els.mobileLyricsContainer.innerHTML = html;
-        
+
         // 绑定点击事件
         // 桌面端歌词点击
         this.els.lyricsContainer.querySelectorAll('.lyric-line').forEach(el => {
             el.onclick = () => this.seekToLyric(parseFloat(el.dataset.time));
         });
-        
-        // 移动端歌词点击（修复手机不能跳转）
+
+        // 移动端歌词点击（#mobile-lyrics-container 位于 #mobile-lyrics-scroll 内，绑定一次即可，避免重复触发）
         this.els.mobileLyricsContainer.querySelectorAll('.lyric-line').forEach(el => {
             el.onclick = () => this.seekToLyric(parseFloat(el.dataset.time));
         });
-        
-        // 移动端全屏歌词视图也需要绑定
-        const mobileLyricsScroll = document.getElementById('mobile-lyrics-scroll');
-        if (mobileLyricsScroll) {
-            mobileLyricsScroll.querySelectorAll('.lyric-line').forEach(el => {
-                el.onclick = () => this.seekToLyric(parseFloat(el.dataset.time));
-            });
-        }
     }
     
     updateLyrics(time) {
@@ -728,15 +735,31 @@ class MusicPlayer {
     
     // 获取当前播放次数最少的歌曲索引（平均随机）
     _getLeastPlayedIndex(excludeIdx) {
+        if (this.playlist.length === 0) return -1;
+        if (this.playlist.length === 1) return 0;
+
         const counts = this.playlist.map((_, i) => this.playCount[i] || 0);
         const minCount = Math.min(...counts);
-        // 找出所有播放次数为最小值的索引
-        const candidates = counts
+        // 找出所有播放次数为最小值的索引（排除当前正在播放的）
+        let candidates = counts
             .map((c, i) => ({ count: c, idx: i }))
             .filter(({ idx }) => idx !== excludeIdx)
             .filter(({ count }) => count === minCount)
             .map(({ idx }) => idx);
-        // 候选里随机选一个
+
+        // 若最小播放次数的唯一拥有者就是被排除项，则从所有非排除项中随机选
+        if (candidates.length === 0) {
+            candidates = counts
+                .map((_, i) => i)
+                .filter(i => i !== excludeIdx);
+        }
+
+        // 兜底：仍无候选（理论上不会到达），返回一个合法索引
+        if (candidates.length === 0) {
+            return (typeof excludeIdx === 'number' && excludeIdx >= 0 && excludeIdx < this.playlist.length)
+                ? excludeIdx
+                : 0;
+        }
         return candidates[Math.floor(Math.random() * candidates.length)];
     }
     
@@ -924,16 +947,22 @@ class MusicPlayer {
     }
     
     seekTo(e) {
+        const duration = this.els.audio.duration;
+        if (!isFinite(duration) || duration <= 0) return;
         const rect = this.els.progressBar.getBoundingClientRect();
-        const percent = (e.clientX - rect.left) / rect.width;
-        this.els.audio.currentTime = percent * this.els.audio.duration;
+        if (rect.width <= 0) return;
+        const percent = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+        this.els.audio.currentTime = percent * duration;
     }
     
     startDrag() {
         const onMove = e => {
+            const duration = this.els.audio.duration;
+            if (!isFinite(duration) || duration <= 0) return;
             const rect = this.els.progressBar.getBoundingClientRect();
+            if (rect.width <= 0) return;
             const percent = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-            this.els.audio.currentTime = percent * this.els.audio.duration;
+            this.els.audio.currentTime = percent * duration;
         };
         
         const onUp = () => {
