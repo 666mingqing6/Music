@@ -242,5 +242,12 @@ var localMusic = [
     url: 'https://tu.646474.xyz/%E6%98%A5%E5%BA%AD%E9%A3%8E%E6%9C%88.mp3',
     cover: 'https://tu.646474.xyz/%E6%98%A5%E5%BA%AD%E9%A3%8E%E6%9C%88.jpeg',
     lrc: 'https://tu.646474.xyz/%E6%98%A5%E5%BA%AD%E9%A3%8E%E6%9C%88.lrc'
+  },
+  {
+    name: 'やわらかな光',
+    artist: 'やまだ豊',
+    url: 'https://tu.646474.xyz/%E5%85%89.mp3',
+    cover: 'https://tu.646474.xyz/%E5%85%89.jpg',
+    lrc: 'https://tu.646474.xyz/%E5%85%89.lrc'
   }
 ];
