@@ -82,6 +82,44 @@
                             <div id="volume-fill"></div>
                         </div>
                     </div>
+                    <div id="effect-control" class="control-btn-wrap">
+                        <button id="btn-effect" class="control-btn" title="音效">
+                            <i class="fas fa-sliders"></i>
+                        </button>
+                        <div id="effect-popup">
+                            <div class="effect-popup-title">音效</div>
+                            <div class="effect-list">
+                                <button class="effect-item active" data-effect="none">
+                                    <span class="effect-name">关闭</span>
+                                    <span class="effect-desc">原声输出</span>
+                                </button>
+                                <button class="effect-item" data-effect="3d-surround">
+                                    <span class="effect-name">3D环绕</span>
+                                    <span class="effect-desc">立体声旋转混响</span>
+                                </button>
+                                <button class="effect-item" data-effect="immersive">
+                                    <span class="effect-name">沉浸</span>
+                                    <span class="effect-desc">深度空间混响</span>
+                                </button>
+                                <button class="effect-item" data-effect="live">
+                                    <span class="effect-name">现场感</span>
+                                    <span class="effect-desc">现场厅堂感</span>
+                                </button>
+                                <button class="effect-item" data-effect="echo">
+                                    <span class="effect-name">迷幻</span>
+                                    <span class="effect-desc">延迟回声</span>
+                                </button>
+                                <button class="effect-item" data-effect="pop">
+                                    <span class="effect-name">流行</span>
+                                    <span class="effect-desc">均衡器优化</span>
+                                </button>
+                                <button class="effect-item" data-effect="bass-boost">
+                                    <span class="effect-name">重低音</span>
+                                    <span class="effect-desc">低频增强</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </section>
 
@@ -95,7 +133,7 @@
                     </button>
                     <button class="panel-tab" data-panel="queue">
                         <i class="fas fa-list"></i>
-                        <span>播放列表</span>
+                        <span>列表</span>
                     </button>
                     <button class="panel-tab" data-panel="search">
                         <i class="fas fa-globe"></i>

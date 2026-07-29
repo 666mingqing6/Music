@@ -35,6 +35,18 @@ class MusicPlayer {
         // 播放次数统计（平均随机用，localStorage 持久化）
         this.playCount = this._loadPlayCount();
 
+        // 错误自动恢复：连续出错计数 + 跳过定时器
+        this._consecutiveErrors = 0;
+        this._errorSkipTimer = null;
+
+        // 音效（Web Audio API）
+        this.audioContext = null;
+        this.sourceNode = null;
+        this.audioEffect = 'none';
+        this._effectNodes = [];
+        this._effectInitInProgress = false;
+        this._effectApplyId = 0;
+
         // API
         this.apiUrl = 'https://meting-api.646474.xyz/?server=:server&type=:type&id=:id&r=:r';
 
@@ -112,6 +124,12 @@ class MusicPlayer {
             btnVolume: $('btn-volume'),
             volumeSlider: $('volume-slider'),
             volumeFill: $('volume-fill'),
+
+            // 音效
+            btnEffect: $('btn-effect'),
+            effectControl: $('effect-control'),
+            effectPopup: $('effect-popup'),
+            effectItems: document.querySelectorAll('.effect-item'),
 
             // 面板
             panelTabs: document.querySelectorAll('.panel-tab'),
@@ -214,7 +232,41 @@ class MusicPlayer {
             if (volumeControl && !volumeControl.contains(e.target)) {
                 volumeControl.classList.remove('active');
             }
+            // 同时关闭音效弹窗
+            const effectControl = document.getElementById('effect-control');
+            if (effectControl && !effectControl.contains(e.target)) {
+                effectControl.classList.remove('active');
+            }
         });
+        
+        // 音效按钮：点击切换弹窗
+        if (this.els.btnEffect) {
+            this.els.btnEffect.onclick = e => {
+                e.stopPropagation();
+                const effectControl = document.getElementById('effect-control');
+                if (effectControl) {
+                    effectControl.classList.toggle('active');
+                }
+            };
+        }
+        
+        // 音效选项点击
+        if (this.els.effectItems) {
+            this.els.effectItems.forEach(item => {
+                item.onclick = e => {
+                    e.stopPropagation();
+                    const effect = item.dataset.effect;
+                    this.applyEffect(effect);
+                    // 更新选中状态
+                    this.els.effectItems.forEach(el => el.classList.toggle('active', el === item));
+                    // 移动端体验：选择后关闭弹窗
+                    const effectControl = document.getElementById('effect-control');
+                    if (effectControl && window.innerWidth <= 768) {
+                        effectControl.classList.remove('active');
+                    }
+                };
+            });
+        }
         
         // 进度条滑块拖动
         if (this.els.progressSlider) {
@@ -251,6 +303,10 @@ class MusicPlayer {
             this.els.audio.onplay = () => this.onPlayStateChange(true);
             this.els.audio.onpause = () => this.onPlayStateChange(false);
             this.els.audio.onerror = e => this.handleError(e);
+            // 音频成功加载后重置连续错误计数（说明当前轨道可正常播放）
+            this.els.audio.onloadeddata = () => {
+                this._consecutiveErrors = 0;
+            };
         }
         
         // 搜索功能
@@ -313,6 +369,9 @@ class MusicPlayer {
     
     async loadPlaylist() {
         const localData = typeof localMusic !== 'undefined' ? localMusic : [];
+        // 本地音乐倒序：config.js 中最后面的歌曲在播放列表中排在最前
+        // 这样网易云歌单在前，本地音乐（倒序）在后
+        const reversedLocal = [...localData].reverse();
         
         // 重试 3 次
         for (let attempt = 1; attempt <= 3; attempt++) {
@@ -334,7 +393,8 @@ class MusicPlayer {
                     const onlineData = await response.json();
                     if (Array.isArray(onlineData) && onlineData.length > 0) {
                         console.log('API 成功，获取到', onlineData.length, '首歌曲');
-                        this.playlist = [...localData, ...onlineData];
+                        // 网易云歌单在前 + 本地音乐（倒序）在后
+                        this.playlist = [...onlineData, ...reversedLocal];
                         return;
                     }
                 }
@@ -349,14 +409,20 @@ class MusicPlayer {
             }
         }
         
-        // 3 次都失败，仅使用本地音乐
+        // 3 次都失败，仅使用本地音乐（保持倒序）
         console.log('API 3 次均失败，仅使用本地音乐');
-        this.playlist = localData;
+        this.playlist = reversedLocal;
     }
     
     async loadTrack(index, autoPlay = false) {
         // 严格校验索引：过滤 undefined/NaN 等非法值（_getLeastPlayedIndex 在极端情况下可能返回 -1/undefined）
         if (!Number.isInteger(index) || index < 0 || index >= this.playlist.length) return;
+
+        // 取消尚未触发的错误自动跳过（避免与新加载产生竞态）
+        if (this._errorSkipTimer) {
+            clearTimeout(this._errorSkipTimer);
+            this._errorSkipTimer = null;
+        }
 
         // 加载令牌：本次加载的标识，用于在 await 后判断是否已被更新的加载取代
         const loadId = ++this._loadId;
@@ -810,7 +876,7 @@ class MusicPlayer {
         }
     }
     
-    next() {
+    next(forceAutoplay = false) {
         let index;
         if (this.playMode === 'shuffle') {
             // 如果路径上还有后续，就走确定路线
@@ -828,7 +894,7 @@ class MusicPlayer {
             index = this.currentIndex + 1;
             if (index >= this.playlist.length) index = 0;
         }
-        this.loadTrack(index, this.isPlaying);
+        this.loadTrack(index, forceAutoplay || this.isPlaying);
     }
     
     // 统一的播放模式切换（顺序 -> 随机 -> 单曲循环 -> 顺序）
@@ -1026,6 +1092,316 @@ class MusicPlayer {
         if (this.els.volumeSlider) {
             this.els.volumeSlider.value = volume * 100;
         }
+    }
+    
+    // ========== 音效处理（Web Audio API） ==========
+    
+    // 懒初始化音频图：仅在用户首次启用音效时调用，避免默认情况下设置 crossorigin 影响播放
+    async _ensureAudioGraph() {
+        if (this.sourceNode) return true; // 已初始化
+        if (this._effectInitInProgress) return false;
+        this._effectInitInProgress = true;
+
+        try {
+            const AC = window.AudioContext || window.webkitAudioContext;
+            if (!AC) {
+                this.showToast('当前浏览器不支持音效功能', 'error');
+                this._effectInitInProgress = false;
+                return false;
+            }
+
+            // 预检：当前歌曲源是否支持 CORS
+            // 一旦调用 createMediaElementSource，跨域且无CORS的音频会被静音且无法恢复，故必须先检查
+            const track = this.playlist[this.currentIndex];
+            if (track && track.url && !(await this._checkCorsSupport(track.url))) {
+                this.showToast('当前歌曲源不支持音效（需服务器开启CORS），请尝试其他歌曲', 'error', 3500);
+                this.audioEffect = 'none';
+                this._effectInitInProgress = false;
+                return false;
+            }
+
+            // 设置 crossorigin，使跨域音频能被 Web Audio API 处理（否则会被静音）
+            this.els.audio.crossOrigin = 'anonymous';
+
+            this.audioContext = new AC();
+            this.sourceNode = this.audioContext.createMediaElementSource(this.els.audio);
+            // 默认直通：source -> destination
+            this.sourceNode.connect(this.audioContext.destination);
+
+            // 用户手势期间恢复挂起的 AudioContext
+            if (this.audioContext.state === 'suspended') {
+                try { await this.audioContext.resume(); } catch (e) {}
+            }
+
+            // crossorigin 仅对后续加载生效，需要重新加载当前轨道以使现有音频可被处理
+            await this._reloadCurrentForAudioGraph();
+        } catch (e) {
+            console.error('音效初始化失败:', e);
+            this.audioEffect = 'none';
+            this._effectInitInProgress = false;
+            return false;
+        }
+
+        this._effectInitInProgress = false;
+        return true;
+    }
+
+    // 检查 URL 是否支持 CORS（不抛错即说明 CORS 头已发送，可被 Web Audio 处理）
+    async _checkCorsSupport(url) {
+        if (!url || url.startsWith('data:') || url.startsWith('blob:')) return true;
+        try {
+            const u = new URL(url, location.href);
+            if (u.origin === location.origin) return true; // 同源
+        } catch (e) { /* 跨域继续检查 */ }
+        try {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 4000);
+            await fetch(url, { mode: 'cors', method: 'HEAD', signal: controller.signal });
+            clearTimeout(timer);
+            return true;
+        } catch (e) {
+            return false;
+        }
+    }
+
+    // 重新加载当前轨道（保持播放位置与播放状态），用于 crossorigin 生效
+    async _reloadCurrentForAudioGraph() {
+        const track = this.playlist[this.currentIndex];
+        if (!track) return;
+
+        const expectedIndex = this.currentIndex;
+        const wasPlaying = this.isPlaying;
+        const prevTime = this.els.audio.currentTime || 0;
+
+        this.els.audio.src = track.url;
+        this.els.audio.load();
+
+        // 等待元数据加载（最长 3 秒）
+        await new Promise(resolve => {
+            let done = false;
+            const finish = () => {
+                if (done) return;
+                done = true;
+                this.els.audio.removeEventListener('loadedmetadata', finish);
+                resolve();
+            };
+            this.els.audio.addEventListener('loadedmetadata', finish);
+            setTimeout(finish, 3000);
+        });
+
+        // 若期间因错误自动跳过等导致 currentIndex 改变，则放弃恢复播放位置
+        if (this.currentIndex !== expectedIndex) return;
+
+        if (isFinite(prevTime) && prevTime > 0) {
+            try { this.els.audio.currentTime = prevTime; } catch (e) {}
+        }
+        if (wasPlaying) {
+            this.play();
+        }
+    }
+
+    // 应用音效（外部入口）
+    async applyEffect(effect) {
+        this.audioEffect = effect;
+        const applyId = ++this._effectApplyId;
+
+        // 关闭音效：若已初始化音频图，则切回直通
+        if (effect === 'none') {
+            if (this.sourceNode) {
+                this._disconnectEffectChain();
+                try { this.sourceNode.connect(this.audioContext.destination); } catch (e) {}
+            }
+            // 更新按钮高亮
+            this._updateEffectButton();
+            this.showToast('音效已关闭', 'info', 1200);
+            return;
+        }
+
+        // 启用音效：确保音频图已初始化，再挂载效果链
+        const ok = await this._ensureAudioGraph();
+        if (applyId !== this._effectApplyId) return; // 已被更新的选择取代
+        if (!ok) return;
+        this._applyEffectChain(effect);
+        this._updateEffectButton();
+        const labels = {
+            '3d-surround': '3D环绕',
+            'immersive': '沉浸',
+            'live': '现场感',
+            'echo': '迷幻',
+            'pop': '流行',
+            'bass-boost': '重低音'
+        };
+        this.showToast(`音效: ${labels[effect] || effect}`, 'info', 1200);
+    }
+
+    // 更新音效按钮的 active 状态
+    _updateEffectButton() {
+        if (this.els.btnEffect) {
+            this.els.btnEffect.classList.toggle('active', this.audioEffect !== 'none');
+        }
+    }
+
+    // 构建效果链（在 _ensureAudioGraph 之后调用）
+    _applyEffectChain(effect) {
+        if (!this.audioContext || !this.sourceNode) return;
+        this._disconnectEffectChain();
+
+        const ctx = this.audioContext;
+        const source = this.sourceNode;
+        const dest = ctx.destination;
+
+        if (effect === '3d-surround') {
+            // 3D环绕：立体声 LFO 摇摆 + 空间混响
+            const panner = ctx.createStereoPanner();
+            const lfo = ctx.createOscillator();
+            const lfoGain = ctx.createGain();
+            lfo.frequency.value = 0.25;   // 慢速摇摆周期
+            lfoGain.gain.value = 0.85;    // 摇摆深度
+            lfo.connect(lfoGain);
+            lfoGain.connect(panner.pan);
+            lfo.start();
+
+            const reverb = this._createReverb(ctx, 2.8, 2.5);
+            const reverbGain = ctx.createGain();
+            reverbGain.gain.value = 0.35;
+            const dryGain = ctx.createGain();
+            dryGain.gain.value = 0.85;
+
+            source.connect(panner);
+            panner.connect(dryGain);
+            dryGain.connect(dest);
+            panner.connect(reverb);
+            reverb.connect(reverbGain);
+            reverbGain.connect(dest);
+
+            this._effectNodes = [panner, lfo, lfoGain, reverb, reverbGain, dryGain];
+        } else if (effect === 'immersive') {
+            // 沉浸：较重的空间混响
+            const reverb = this._createReverb(ctx, 3.6, 2.2);
+            const reverbGain = ctx.createGain();
+            reverbGain.gain.value = 0.6;
+            const dryGain = ctx.createGain();
+            dryGain.gain.value = 0.7;
+
+            source.connect(dryGain);
+            dryGain.connect(dest);
+            source.connect(reverb);
+            reverb.connect(reverbGain);
+            reverbGain.connect(dest);
+
+            this._effectNodes = [reverb, reverbGain, dryGain];
+        } else if (effect === 'live') {
+            // 现场感：轻度厅堂混响
+            const reverb = this._createReverb(ctx, 1.8, 2.0);
+            const reverbGain = ctx.createGain();
+            reverbGain.gain.value = 0.25;
+            const dryGain = ctx.createGain();
+            dryGain.gain.value = 0.9;
+
+            source.connect(dryGain);
+            dryGain.connect(dest);
+            source.connect(reverb);
+            reverb.connect(reverbGain);
+            reverbGain.connect(dest);
+
+            this._effectNodes = [reverb, reverbGain, dryGain];
+        } else if (effect === 'echo') {
+            // 迷幻：延迟回声
+            const delay = ctx.createDelay(2);
+            delay.delayTime.value = 0.25;
+            const feedback = ctx.createGain();
+            feedback.gain.value = 0.4;
+            const wetGain = ctx.createGain();
+            wetGain.gain.value = 0.35;
+            const dryGain = ctx.createGain();
+            dryGain.gain.value = 0.8;
+
+            source.connect(dryGain);
+            dryGain.connect(dest);
+            source.connect(delay);
+            delay.connect(feedback);
+            feedback.connect(delay);
+            delay.connect(wetGain);
+            wetGain.connect(dest);
+
+            this._effectNodes = [delay, feedback, wetGain, dryGain];
+        } else if (effect === 'pop') {
+            // 流行：三段 EQ
+            const bass = ctx.createBiquadFilter();
+            bass.type = 'lowshelf';
+            bass.frequency.value = 200;
+            bass.gain.value = 3;
+
+            const mid = ctx.createBiquadFilter();
+            mid.type = 'peaking';
+            mid.frequency.value = 1000;
+            mid.Q.value = 1;
+            mid.gain.value = -2;
+
+            const treble = ctx.createBiquadFilter();
+            treble.type = 'highshelf';
+            treble.frequency.value = 3500;
+            treble.gain.value = 4;
+
+            source.connect(bass);
+            bass.connect(mid);
+            mid.connect(treble);
+            treble.connect(dest);
+
+            this._effectNodes = [bass, mid, treble];
+        } else if (effect === 'bass-boost') {
+            // 重低音：低频架棚 + 60Hz 峰值
+            const bass = ctx.createBiquadFilter();
+            bass.type = 'lowshelf';
+            bass.frequency.value = 150;
+            bass.gain.value = 8;
+
+            const sub = ctx.createBiquadFilter();
+            sub.type = 'peaking';
+            sub.frequency.value = 60;
+            sub.Q.value = 1;
+            sub.gain.value = 6;
+
+            source.connect(bass);
+            bass.connect(sub);
+            sub.connect(dest);
+
+            this._effectNodes = [bass, sub];
+        } else {
+            // 未知效果：直通，避免源被断开后静音
+            try { source.connect(dest); } catch (e) {}
+        }
+    }
+
+    // 断开当前效果链（含源节点的输出）
+    _disconnectEffectChain() {
+        this._effectNodes.forEach(node => {
+            try { node.disconnect(); } catch (e) {}
+            // 停止振荡器（LFO）
+            if (node.stop && typeof node.stop === 'function') {
+                try { node.stop(); } catch (e) {}
+            }
+        });
+        this._effectNodes = [];
+        if (this.sourceNode) {
+            try { this.sourceNode.disconnect(); } catch (e) {}
+        }
+    }
+
+    // 合成混响脉冲响应（噪声衰减）
+    _createReverb(ctx, duration, decay) {
+        const sampleRate = ctx.sampleRate;
+        const length = Math.max(1, Math.floor(sampleRate * duration));
+        const impulse = ctx.createBuffer(2, length, sampleRate);
+        for (let ch = 0; ch < 2; ch++) {
+            const data = impulse.getChannelData(ch);
+            for (let i = 0; i < length; i++) {
+                data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, decay);
+            }
+        }
+        const convolver = ctx.createConvolver();
+        convolver.buffer = impulse;
+        return convolver;
     }
     
     // ========== 播放列表 ==========
@@ -1495,7 +1871,31 @@ class MusicPlayer {
         console.error('音频加载错误:', e);
         const track = this.playlist[this.currentIndex];
         const name = track ? (track.name || track.title || '未知歌曲') : '未知歌曲';
-        this.showToast(`播放失败: ${name}`, 'error');
+
+        // 取消尚未触发的旧定时器
+        if (this._errorSkipTimer) {
+            clearTimeout(this._errorSkipTimer);
+            this._errorSkipTimer = null;
+        }
+
+        // 累计连续错误，超过阈值则停止自动跳过，避免死循环
+        this._consecutiveErrors = (this._consecutiveErrors || 0) + 1;
+        if (this._consecutiveErrors > 5) {
+            this.showToast('连续多首歌曲无法播放，已停止自动跳过', 'error', 4000);
+            this._consecutiveErrors = 0;
+            this.isPlaying = false;
+            this.onPlayStateChange(false);
+            return;
+        }
+
+        this.showToast(`无法播放: ${name}，自动跳过...`, 'error', 2000);
+
+        // 1.2 秒后自动跳到下一首（强 autoplay），避免用户卡在坏掉的音轨上
+        this._errorSkipTimer = setTimeout(() => {
+            this._errorSkipTimer = null;
+            // 单曲循环模式下也跳过（坏掉的音轨无法重复播放）
+            this.next(true);
+        }, 1200);
     }
     
     // ========== 工具方法 ==========
