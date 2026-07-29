@@ -633,6 +633,97 @@ input[type="range"] {
     opacity: 0.5;
 }
 
+/* ========== 音效控制 ========== */
+#effect-control {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+#btn-effect.active {
+    color: var(--color-accent);
+}
+
+#effect-popup {
+    position: absolute;
+    bottom: calc(100% + 8px);
+    right: 0;
+    width: 220px;
+    background: rgba(20, 20, 20, 0.96);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg);
+    border: 1px solid var(--color-border);
+    padding: var(--space-sm);
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(6px);
+    transition: opacity 0.25s var(--ease-out), transform 0.25s var(--ease-out), visibility 0s 0.25s;
+    z-index: 100;
+    max-height: 60vh;
+    overflow-y: auto;
+}
+
+#effect-popup.active,
+#effect-control.active #effect-popup {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+    transition: opacity 0.25s var(--ease-out), transform 0.25s var(--ease-out), visibility 0s 0s;
+}
+
+.effect-popup-title {
+    font-size: 0.72rem;
+    color: var(--color-text-tertiary);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    padding: var(--space-xs) var(--space-sm) var(--space-sm);
+    border-bottom: 1px solid var(--color-border);
+    margin-bottom: var(--space-xs);
+}
+
+.effect-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.effect-item {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: var(--space-sm);
+    border-radius: var(--radius-sm);
+    text-align: left;
+    transition: background 0.18s var(--ease-out);
+    color: var(--color-text-secondary);
+}
+
+.effect-item:hover {
+    background: var(--color-surface-hover);
+    color: var(--color-text-primary);
+}
+
+.effect-item.active {
+    background: rgba(59, 130, 246, 0.15);
+    color: var(--color-accent-light);
+}
+
+.effect-item.active .effect-name {
+    color: var(--color-accent);
+}
+
+.effect-name {
+    font-size: 0.88rem;
+    font-weight: 600;
+}
+
+.effect-desc {
+    font-size: 0.7rem;
+    color: var(--color-text-tertiary);
+}
+
 /* ========== 右侧面板 ========== */
 #player-panel {
     display: flex;
