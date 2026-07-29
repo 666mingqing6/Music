@@ -249,5 +249,54 @@ var localMusic = [
     url: 'https://tu.646474.xyz/%E5%85%89.mp3',
     cover: 'https://tu.646474.xyz/%E5%85%89.jpg',
     lrc: 'https://tu.646474.xyz/%E5%85%89.lrc'
+  },
+  {
+    name: '3 Strikes',
+    artist: 'Terror Jr',
+    url: 'https://tu.646474.xyz/3%20Strikes.mp3',
+    cover: 'https://tu.646474.xyz/3%20Strikes.jpg',
+    lrc: 'https://tu.646474.xyz/3%20Strikes.lrc'
+  },
+  {
+    name: '风催雨 (DJ降调版)',
+    artist: '姜姜',
+    url: 'https://tu.646474.xyz/%E9%A3%8E%E5%82%AC%E9%9B%A8.mp3',
+    cover: 'https://tu.646474.xyz/%E9%A3%8E%E5%82%AC%E9%9B%A8.jpg',
+    lrc: 'https://tu.646474.xyz/%E9%A3%8E%E5%82%AC%E9%9B%A8.lrc'
+  },
+  {
+    name: '红色高跟鞋',
+    artist: '蔡健雅',
+    url: 'https://tu.646474.xyz/%E7%BA%A2%E8%89%B2%E9%AB%98%E8%B7%9F%E9%9E%8B.mp3',
+    cover: 'https://tu.646474.xyz/%E7%BA%A2%E8%89%B2%E9%AB%98%E8%B7%9F%E9%9E%8B.jpg',
+    lrc: 'https://tu.646474.xyz/%E7%BA%A2%E8%89%B2%E9%AB%98%E8%B7%9F%E9%9E%8B.lrc'
+  },
+  {
+    name: '琵琶曲（东船与西舫）',
+    artist: '郑浩Z-Hao/冰洁',
+    url: 'https://tu.646474.xyz/%E7%90%B5%E7%90%B6%E6%9B%B2.mp3',
+    cover: 'https://tu.646474.xyz/%E7%90%B5%E7%90%B6%E6%9B%B2.jpg',
+    lrc: 'https://tu.646474.xyz/%E7%90%B5%E7%90%B6%E6%9B%B2.lrc'
+  },
+  {
+    name: '情歌',
+    artist: '梁静茹',
+    url: 'https://tu.646474.xyz/%E6%83%85%E6%AD%8C.mp3',
+    cover: 'https://tu.646474.xyz/%E6%83%85%E6%AD%8C.jpg',
+    lrc: 'https://tu.646474.xyz/%E6%83%85%E6%AD%8C.lrc'
+  },
+  {
+    name: '一点',
+    artist: 'Muyoi/Pezzi',
+    url: 'https://tu.646474.xyz/%E4%B8%80%E7%82%B9.mp3',
+    cover: 'https://tu.646474.xyz/%E4%B8%80%E7%82%B9.jpg',
+    lrc: 'https://tu.646474.xyz/%E4%B8%80%E7%82%B9.lrc'
+  },
+  {
+    name: 'Time To Love',
+    artist: 'October',
+    url: 'https://tu.646474.xyz/Time%20To%20Love.mp3',
+    cover: 'https://tu.646474.xyz/Time%20To%20Love.jpg',
+    lrc: 'https://tu.646474.xyz/Time%20To%20Love.lrc'
   }
 ];
