@@ -47,6 +47,10 @@ class MusicPlayer {
         this._effectInitInProgress = false;
         this._effectApplyId = 0;
 
+        // CORS 代理（用于不支持 CORS 的音频源，如网易云，启用音效时代理音频为 blob URL）
+        this.corsProxy = typeof corsProxyUrl !== 'undefined' ? corsProxyUrl : '';
+        this._blobUrlCache = new Map();
+
         // API
         this.apiUrl = 'https://meting-api.646474.xyz/?server=:server&type=:type&id=:id&r=:r';
 
@@ -463,7 +467,14 @@ class MusicPlayer {
         this.els.coverContainer.classList.toggle('playing', false);
 
         // 加载音频
-        this.els.audio.src = track.url;
+        // 音效已初始化时，非 CORS 源需通过代理获取 blob URL（否则会被静音）
+        if (this.sourceNode) {
+            const audioUrl = await this._getEffectAudioUrl(track);
+            if (loadId !== this._loadId) return;
+            this.els.audio.src = audioUrl;
+        } else {
+            this.els.audio.src = track.url;
+        }
 
         // 加载歌词
         await this.loadLyrics(track.lrc);
@@ -1113,15 +1124,41 @@ class MusicPlayer {
             // 预检：当前歌曲源是否支持 CORS
             // 一旦调用 createMediaElementSource，跨域且无CORS的音频会被静音且无法恢复，故必须先检查
             const track = this.playlist[this.currentIndex];
-            if (track && track.url && !(await this._checkCorsSupport(track.url))) {
-                this.showToast('当前歌曲源不支持音效（需服务器开启CORS），请尝试其他歌曲', 'error', 3500);
+            if (!track || !track.url) {
+                this.showToast('无法获取当前歌曲信息', 'error');
                 this.audioEffect = 'none';
                 this._effectInitInProgress = false;
                 return false;
             }
 
-            // 设置 crossorigin，使跨域音频能被 Web Audio API 处理（否则会被静音）
+            const corsOk = track.url.startsWith('data:') || track.url.startsWith('blob:')
+                ? true : await this._checkCorsSupport(track.url);
+
+            // 设置 crossorigin，使跨域音频能被 Web Audio API 处理（blob URL 同源不受影响）
             this.els.audio.crossOrigin = 'anonymous';
+
+            // 若不支持 CORS，通过代理获取音频为 blob URL（同源，绕过 CORS 限制）
+            if (!corsOk) {
+                if (!this.corsProxy) {
+                    this.showToast('当前歌曲源不支持 CORS 且未配置代理，无法启用音效', 'error', 3500);
+                    this.audioEffect = 'none';
+                    this._effectInitInProgress = false;
+                    return false;
+                }
+                this.showToast('正在通过代理加载音频以启用音效...', 'info', 2500);
+                try {
+                    const blobUrl = await this._getProxiedBlobUrl(track.url);
+                    track._effectUrl = blobUrl;
+                } catch (e) {
+                    console.error('代理加载音频失败:', e);
+                    this.showToast('代理加载音频失败，无法启用音效', 'error', 3500);
+                    this.audioEffect = 'none';
+                    this._effectInitInProgress = false;
+                    return false;
+                }
+            } else {
+                track._effectUrl = track.url;
+            }
 
             this.audioContext = new AC();
             this.sourceNode = this.audioContext.createMediaElementSource(this.els.audio);
@@ -1173,7 +1210,7 @@ class MusicPlayer {
         const wasPlaying = this.isPlaying;
         const prevTime = this.els.audio.currentTime || 0;
 
-        this.els.audio.src = track.url;
+        this.els.audio.src = track._effectUrl || track.url;
         this.els.audio.load();
 
         // 等待元数据加载（最长 3 秒）
@@ -1403,7 +1440,54 @@ class MusicPlayer {
         convolver.buffer = impulse;
         return convolver;
     }
-    
+
+    // 通过 CORS 代理获取音频，返回同源 blob URL（绕过 CORS 限制）
+    async _getProxiedBlobUrl(url) {
+        if (this._blobUrlCache.has(url)) return this._blobUrlCache.get(url);
+        if (!this.corsProxy) throw new Error('未配置 CORS 代理');
+        const proxyUrl = this.corsProxy + encodeURIComponent(url);
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 15000);
+        try {
+            const response = await fetch(proxyUrl, { signal: controller.signal });
+            clearTimeout(timer);
+            if (!response.ok) throw new Error(`代理返回 ${response.status}`);
+            const blob = await response.blob();
+            const blobUrl = URL.createObjectURL(blob);
+            this._blobUrlCache.set(url, blobUrl);
+            return blobUrl;
+        } catch (e) {
+            clearTimeout(timer);
+            throw e;
+        }
+    }
+
+    // 获取音效模式下的有效音频 URL（CORS 源用原始 URL，非 CORS 源用代理 blob URL）
+    async _getEffectAudioUrl(track) {
+        if (!this.sourceNode) return track.url;
+        // 使用缓存的 URL（已处理过 CORS）
+        if (track._effectUrl) return track._effectUrl;
+        // data:/blob: URL 或同源 URL 无需 CORS 检查
+        if (!track.url || track.url.startsWith('data:') || track.url.startsWith('blob:')) {
+            track._effectUrl = track.url;
+            return track.url;
+        }
+        // 检查 CORS 支持
+        if (await this._checkCorsSupport(track.url)) {
+            track._effectUrl = track.url;
+            return track.url;
+        }
+        // 不支持 CORS：通过代理获取 blob URL
+        try {
+            const blobUrl = await this._getProxiedBlobUrl(track.url);
+            track._effectUrl = blobUrl;
+            return blobUrl;
+        } catch (e) {
+            console.error('代理加载音频失败:', e);
+            return track.url; // 回退到原始 URL（可能被静音但不崩溃）
+        }
+    }
+
     // ========== 播放列表 ==========
     
     renderQueue() {
