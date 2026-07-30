@@ -1448,62 +1448,76 @@ class MusicPlayer {
         return convolver;
     }
 
-    // 通过 CORS 代理获取音频，返回同源 blob URL（绕过 CORS 限制）
-    // 代理格式：https://proxy.646474.xyz/原始URL （直接拼接，不编码）
-    // 代理会自动跟随 302 重定向（包括 meting-api → music.163.com → 真实CDN 的多重定向链）
+    // 为网易云歌曲获取可被 Web Audio API 处理的音频（同源 blob URL）
+    // 流程：meting-api?format=json → Worker 解析真实 CDN URL → 浏览器直接 fetch CDN（CDN 支持 CORS）→ blob
+    // 不再依赖 proxy.646474.xyz 代理音频文件，避免代理跟随重定向被网易云识别返回 HTML 的问题
     async _getProxiedBlobUrl(url) {
         if (this._blobUrlCache.has(url)) return this._blobUrlCache.get(url);
-        if (!this.corsProxy) throw new Error('未配置 CORS 代理');
 
-        // 代理要求 URL 直接拼接，不进行 encodeURIComponent 编码
-        const proxyUrl = this.corsProxy + url;
-        const controller = new AbortController();
-        // 音频文件可能较大（5-10MB），且代理需跟随多次重定向，给足 60 秒
-        const timer = setTimeout(() => controller.abort(), 60000);
+        // 1. 从 URL 中提取歌曲 ID（meting-api 的 url 字段格式：?server=netease&type=url&id=xxx）
+        let songId = null;
+        const idMatch = url.match(/[?&]id=(\d+)/);
+        if (idMatch) songId = idMatch[1];
+        if (!songId) throw new Error('无法从URL提取歌曲ID');
+
+        // 2. 通过 meting-api 的 format=json 接口获取真实 CDN URL（Worker 自己解析重定向，返回 JSON）
+        //    meting-api 已配置 CORS，浏览器可直接 fetch
+        const apiUrl = `https://meting-api.646474.xyz?server=netease&type=url&id=${songId}&format=json`;
+        const resolveController = new AbortController();
+        const resolveTimer = setTimeout(() => resolveController.abort(), 10000);
+        let cdnUrl = null;
         try {
-            // redirect: 'follow' 显式让浏览器跟随重定向（默认行为，显式声明更清晰）
-            const response = await fetch(proxyUrl, {
-                signal: controller.signal,
-                redirect: 'follow'
-            });
-            clearTimeout(timer);
-            if (!response.ok) throw new Error(`代理返回 ${response.status}`);
+            const resolveResp = await fetch(apiUrl, { signal: resolveController.signal });
+            clearTimeout(resolveTimer);
+            if (!resolveResp.ok) throw new Error(`meting-api 返回 ${resolveResp.status}`);
+            const data = await resolveResp.json();
+            if (!data || !data.ok || !data.url) throw new Error(data?.error || '未获取到CDN地址');
+            cdnUrl = data.url;
+            console.log('已解析网易云真实CDN地址:', cdnUrl);
+        } catch (e) {
+            clearTimeout(resolveTimer);
+            throw new Error(`解析CDN地址失败: ${e.message}`);
+        }
+
+        // 3. 直接 fetch CDN URL（m*.music.126.net 支持 CORS，无需代理）
+        const dlController = new AbortController();
+        const dlTimer = setTimeout(() => dlController.abort(), 60000);
+        try {
+            const response = await fetch(cdnUrl, { signal: dlController.signal });
+            clearTimeout(dlTimer);
+            if (!response.ok) throw new Error(`CDN返回 ${response.status}`);
             const contentType = response.headers.get('content-type') || '';
             const blob = await response.blob();
-            // 校验：必须是音频类型，避免代理返回 HTML 错误页被当成音频
             if (!contentType.startsWith('audio/') && !contentType.startsWith('application/') && !contentType.startsWith('video/')) {
-                throw new Error(`代理返回非音频内容: ${contentType}`);
+                throw new Error(`CDN返回非音频内容: ${contentType}`);
             }
             if (blob.size < 1024) throw new Error(`音频文件过小 (${blob.size} bytes)，可能为错误页`);
             const blobUrl = URL.createObjectURL(blob);
             this._blobUrlCache.set(url, blobUrl);
             return blobUrl;
         } catch (e) {
-            clearTimeout(timer);
+            clearTimeout(dlTimer);
             throw e;
         }
     }
 
-    // 解析网易云歌曲的真实 CDN URL（备用方案：当代理直接跟随重定向失败时使用）
-    // 通过 meting-api 获取播放列表时返回的 url 字段本身就是 meting-api 的重定向 URL，
-    // 代理能直接跟随此 URL 的重定向链，故此方法目前作为备用保留
+    // 解析网易云歌曲的真实 CDN URL（独立方法，供需要 CDN 地址但不需要下载音频的场景使用）
     async _resolveNeteaseRealUrl(url) {
         let songId = null;
         const idMatch = url.match(/[?&]id=(\d+)/);
         if (idMatch) songId = idMatch[1];
         if (!songId) throw new Error('无法从URL提取歌曲ID');
 
-        // 使用代理访问 gdstudio API（该 API 返回 JSON，不重定向）
-        const apiUrl = `${MusicPlayer.GD_API}?types=url&source=netease&id=${songId}&br=320`;
+        const apiUrl = `https://meting-api.646474.xyz?server=netease&type=url&id=${songId}&format=json`;
         const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 8000);
+        const timer = setTimeout(() => controller.abort(), 10000);
         try {
             const response = await fetch(apiUrl, { signal: controller.signal });
             clearTimeout(timer);
             if (!response.ok) throw new Error(`API返回 ${response.status}`);
             const data = await response.json();
-            const realUrl = data && data.url;
-            if (!realUrl || !realUrl.startsWith('http')) throw new Error('API未返回有效URL');
+            const realUrl = data && data.ok && data.url;
+            if (!realUrl || !realUrl.startsWith('http')) throw new Error(data?.error || 'API未返回有效URL');
             return realUrl;
         } catch (e) {
             clearTimeout(timer);
