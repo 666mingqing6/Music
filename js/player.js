@@ -1473,13 +1473,19 @@ class MusicPlayer {
             const data = await resolveResp.json();
             if (!data || !data.ok || !data.url) throw new Error(data?.error || '未获取到CDN地址');
             cdnUrl = data.url;
+            // 升级为 HTTPS：meting-api 返回的是 http://m*.music.126.net，
+            // 在 HTTPS 页面直接 fetch 会触发“混合内容”拦截（active mixed content）；
+            // 该 CDN 同时支持 HTTPS 并发送 Access-Control-Allow-Origin: *，故可安全升级
+            if (cdnUrl.startsWith('http://')) {
+                cdnUrl = 'https://' + cdnUrl.slice(7);
+            }
             console.log('已解析网易云真实CDN地址:', cdnUrl);
         } catch (e) {
             clearTimeout(resolveTimer);
             throw new Error(`解析CDN地址失败: ${e.message}`);
         }
 
-        // 3. 直接 fetch CDN URL（m*.music.126.net 支持 CORS，无需代理）
+        // 3. 直接 fetch CDN URL（已升级为 https://，m*.music.126.net 支持 CORS，无需代理）
         const dlController = new AbortController();
         const dlTimer = setTimeout(() => dlController.abort(), 60000);
         try {
