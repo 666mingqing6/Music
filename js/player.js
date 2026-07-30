@@ -305,19 +305,8 @@ class MusicPlayer {
             btn.onclick = () => this.switchMobileView(btn.dataset.view);
         });
         
-        // 音频事件
-        if (this.els.audio) {
-            this.els.audio.ontimeupdate = () => this.updateProgress();
-            this.els.audio.onprogress = () => this.updateBuffer();
-            this.els.audio.onended = () => this.handleEnded();
-            this.els.audio.onplay = () => this.onPlayStateChange(true);
-            this.els.audio.onpause = () => this.onPlayStateChange(false);
-            this.els.audio.onerror = e => this.handleError(e);
-            // 音频成功加载后重置连续错误计数（说明当前轨道可正常播放）
-            this.els.audio.onloadeddata = () => {
-                this._consecutiveErrors = 0;
-            };
-        }
+        // 音频事件（封装为方法，便于 _teardownAudioGraph 重建 audio 元素后重新绑定）
+        this._bindAudioEvents();
         
         // 搜索功能
         if (this.els.queueSearchInput) {
@@ -1212,10 +1201,46 @@ class MusicPlayer {
                 this.audioContext = null;
             }
         } catch (e) { /* ignore */ }
-        // 重置 crossorigin：audio 元素脱离 Web Audio 后用原始 302 播放，不能带 crossorigin
-        this.els.audio.crossOrigin = null;
+        // 关键：createMediaElementSource() 是不可逆操作，audio 元素一旦被绑定到
+        // Web Audio 图，即使 sourceNode.disconnect() + audioContext.close()，
+        // 浏览器仍会持续对该 audio 元素应用 CORS 检查（"MediaElementAudioSource
+        // outputs zeroes due to CORS access restrictions"），导致加载无 CORS 头的
+        // 302 URL 时永久静音。唯一可靠的恢复方式是销毁旧 audio 元素并重建。
+        this._recreateAudioElement();
         this.audioEffect = 'none';
         this._updateEffectButton();
+    }
+
+    // 重建 audio 元素：彻底解除与已关闭 AudioContext 的绑定，恢复默认音频输出
+    _recreateAudioElement() {
+        const oldAudio = this.els.audio;
+        if (!oldAudio) return;
+        const newAudio = document.createElement('audio');
+        newAudio.id = oldAudio.id || 'audio-player';
+        // 保持音量
+        try { newAudio.volume = oldAudio.volume; } catch (e) {}
+        // 替换 DOM 节点
+        if (oldAudio.parentNode) {
+            oldAudio.parentNode.replaceChild(newAudio, oldAudio);
+        }
+        this.els.audio = newAudio;
+        this._bindAudioEvents();
+    }
+
+    // 绑定 audio 元素事件（封装以便重建后重新绑定）
+    _bindAudioEvents() {
+        const audio = this.els.audio;
+        if (!audio) return;
+        audio.ontimeupdate = () => this.updateProgress();
+        audio.onprogress = () => this.updateBuffer();
+        audio.onended = () => this.handleEnded();
+        audio.onplay = () => this.onPlayStateChange(true);
+        audio.onpause = () => this.onPlayStateChange(false);
+        audio.onerror = e => this.handleError(e);
+        // 音频成功加载后重置连续错误计数（说明当前轨道可正常播放）
+        audio.onloadeddata = () => {
+            this._consecutiveErrors = 0;
+        };
     }
 
     // 检查 URL 是否支持 CORS（不抛错即说明 CORS 头已发送，可被 Web Audio 处理）
