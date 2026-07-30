@@ -477,6 +477,9 @@ class MusicPlayer {
                 console.error('音效模式加载音频失败，回退原始URL:', e);
                 this.showToast(e.message || '音效加载失败，回退原始URL', 'info', 2500);
                 if (loadId !== this._loadId) return;
+                // 回退到原始 URL 时必须同时清除 crossorigin，否则 302→music.163.com
+                // 的非 CORS 源会因 crossorigin=anonymous 而播放失败
+                this.els.audio.crossOrigin = null;
                 this.els.audio.src = track.url;
             }
         } else {
@@ -1137,12 +1140,23 @@ class MusicPlayer {
                     track._effectUrl = blobUrl;
                 } catch (e) {
                     console.error('音效音频加载失败:', e);
-                    this.showToast(`音效加载失败: ${e.message || '未知错误'}，已关闭音效`, 'error', 3500);
+                    this.showToast(`音效加载失败: ${e.message || '未知错误'}，已关闭音效，正常播放中`, 'error', 3500);
                     // 关键：失败时重置 crossorigin，否则会污染后续所有正常播放
                     // （crossorigin=anonymous 会让 302→music.163.com 的非 CORS 源全部失败）
                     this.els.audio.crossOrigin = null;
                     this.audioEffect = 'none';
                     this._effectInitInProgress = false;
+                    // 重新 load 当前歌曲，确保 audio 用干净状态（无 crossorigin）走原始 302 播放
+                    // 失败的常见原因：网易云对该歌曲对海外 IP 风控，Worker 拿不到 CDN 地址，
+                    // 但浏览器（国内 IP）走原始 302 仍可正常播放
+                    try {
+                        const track2 = this.playlist[this.currentIndex];
+                        if (track2 && track2.url) {
+                            this.els.audio.src = track2.url;
+                            this.els.audio.load();
+                            if (this.isPlaying) this.els.audio.play().catch(() => {});
+                        }
+                    } catch (_) {}
                     return false;
                 }
             } else {
