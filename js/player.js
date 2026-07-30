@@ -862,7 +862,10 @@ class MusicPlayer {
     }
 
     play() {
-        this.els.audio.play().catch(e => console.warn('播放失败:', e));
+        this.els.audio.play().catch(e => {
+            // AbortError: play() 被后续 pause()/load() 中断，常见于快速切歌，属正常行为无需告警
+            if (e.name !== 'AbortError') console.warn('播放失败:', e);
+        });
     }
     
     pause() {
@@ -1141,24 +1144,18 @@ class MusicPlayer {
             const corsOk = track.url.startsWith('data:') || track.url.startsWith('blob:')
                 ? true : await this._checkCorsSupport(track.url);
 
-            // 设置 crossorigin，使跨域音频能被 Web Audio API 处理（blob URL 同源不受影响）
-            this.els.audio.crossOrigin = 'anonymous';
-
-            // 若不支持 CORS，通过代理获取音频为 blob URL（同源，绕过 CORS 限制）
+            // 若不支持 CORS，通过 meting-api 解析真实 CDN 并下载为 blob URL（同源，绕过 CORS 限制）
             if (!corsOk) {
-                if (!this.corsProxy) {
-                    this.showToast('当前歌曲源不支持 CORS 且未配置代理，无法启用音效', 'error', 3500);
-                    this.audioEffect = 'none';
-                    this._effectInitInProgress = false;
-                    return false;
-                }
-                this.showToast('正在通过代理加载音频以启用音效...', 'info', 2500);
+                this.showToast('正在解析音频以启用音效...', 'info', 2500);
                 try {
                     const blobUrl = await this._getProxiedBlobUrl(track.url);
                     track._effectUrl = blobUrl;
                 } catch (e) {
-                    console.error('代理加载音频失败:', e);
-                    this.showToast('代理加载音频失败，无法启用音效', 'error', 3500);
+                    console.error('音效音频加载失败:', e);
+                    this.showToast(`音效加载失败: ${e.message || '未知错误'}，已关闭音效`, 'error', 3500);
+                    // 关键：失败时重置 crossorigin，否则会污染后续所有正常播放
+                    // （crossorigin=anonymous 会让 302→music.163.com 的非 CORS 源全部失败）
+                    this.els.audio.crossOrigin = null;
                     this.audioEffect = 'none';
                     this._effectInitInProgress = false;
                     return false;
@@ -1166,6 +1163,10 @@ class MusicPlayer {
             } else {
                 track._effectUrl = track.url;
             }
+
+            // 确认音频 URL（blob 或 CORS 源）就绪后才设置 crossorigin
+            // 必须在 createMediaElementSource 之前设置，否则跨域音频会被静音且无法恢复
+            this.els.audio.crossOrigin = 'anonymous';
 
             this.audioContext = new AC();
             this.sourceNode = this.audioContext.createMediaElementSource(this.els.audio);
