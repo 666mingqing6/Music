@@ -817,33 +817,18 @@ class MusicPlayer {
         localStorage.setItem('mq_play_count', JSON.stringify(this.playCount));
     }
     
-    // 获取当前播放次数最少的歌曲索引（平均随机）
+    // 获取下一首随机索引：网易云 + 本地音乐整个列表均匀随机，避免连续重复
     _getLeastPlayedIndex(excludeIdx) {
         if (this.playlist.length === 0) return -1;
         if (this.playlist.length === 1) return 0;
 
-        const counts = this.playlist.map((_, i) => this.playCount[i] || 0);
-        const minCount = Math.min(...counts);
-        // 找出所有播放次数为最小值的索引（排除当前正在播放的）
-        let candidates = counts
-            .map((c, i) => ({ count: c, idx: i }))
-            .filter(({ idx }) => idx !== excludeIdx)
-            .filter(({ count }) => count === minCount)
-            .map(({ idx }) => idx);
-
-        // 若最小播放次数的唯一拥有者就是被排除项，则从所有非排除项中随机选
-        if (candidates.length === 0) {
-            candidates = counts
-                .map((_, i) => i)
-                .filter(i => i !== excludeIdx);
+        // 候选为除当前歌曲外的所有索引（两个歌单视为一个整体池）
+        const candidates = [];
+        for (let i = 0; i < this.playlist.length; i++) {
+            if (i !== excludeIdx) candidates.push(i);
         }
-
-        // 兜底：仍无候选（理论上不会到达），返回一个合法索引
-        if (candidates.length === 0) {
-            return (typeof excludeIdx === 'number' && excludeIdx >= 0 && excludeIdx < this.playlist.length)
-                ? excludeIdx
-                : 0;
-        }
+        // 兜底：只剩当前歌曲可放
+        if (candidates.length === 0) return excludeIdx >= 0 ? excludeIdx : 0;
         return candidates[Math.floor(Math.random() * candidates.length)];
     }
 
