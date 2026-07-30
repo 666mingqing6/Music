@@ -469,9 +469,16 @@ class MusicPlayer {
         // 加载音频
         // 音效已初始化时，非 CORS 源需通过代理获取 blob URL（否则会被静音）
         if (this.sourceNode) {
-            const audioUrl = await this._getEffectAudioUrl(track);
-            if (loadId !== this._loadId) return;
-            this.els.audio.src = audioUrl;
+            try {
+                const audioUrl = await this._getEffectAudioUrl(track);
+                if (loadId !== this._loadId) return;
+                this.els.audio.src = audioUrl;
+            } catch (e) {
+                console.error('音效模式加载音频失败，回退原始URL:', e);
+                this.showToast(e.message || '音效加载失败，回退原始URL', 'info', 2500);
+                if (loadId !== this._loadId) return;
+                this.els.audio.src = track.url;
+            }
         } else {
             this.els.audio.src = track.url;
         }
@@ -1442,17 +1449,26 @@ class MusicPlayer {
     }
 
     // 通过 CORS 代理获取音频，返回同源 blob URL（绕过 CORS 限制）
+    // 代理格式：https://proxy.646474.xyz/原始URL （直接拼接，不编码）
     async _getProxiedBlobUrl(url) {
         if (this._blobUrlCache.has(url)) return this._blobUrlCache.get(url);
         if (!this.corsProxy) throw new Error('未配置 CORS 代理');
-        const proxyUrl = this.corsProxy + encodeURIComponent(url);
+        // 代理要求 URL 直接拼接，不进行 encodeURIComponent 编码
+        const proxyUrl = this.corsProxy + url;
         const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 15000);
+        // 音频文件可能较大（5-10MB），给足 60 秒下载时间
+        const timer = setTimeout(() => controller.abort(), 60000);
         try {
             const response = await fetch(proxyUrl, { signal: controller.signal });
             clearTimeout(timer);
             if (!response.ok) throw new Error(`代理返回 ${response.status}`);
+            const contentType = response.headers.get('content-type') || '';
             const blob = await response.blob();
+            // 校验：必须是音频类型，避免代理返回 HTML 错误页被当成音频
+            if (!contentType.startsWith('audio/') && !contentType.startsWith('application/') && !contentType.startsWith('video/')) {
+                throw new Error(`代理返回非音频内容: ${contentType}`);
+            }
+            if (blob.size < 1024) throw new Error(`音频文件过小 (${blob.size} bytes)，可能为错误页`);
             const blobUrl = URL.createObjectURL(blob);
             this._blobUrlCache.set(url, blobUrl);
             return blobUrl;
@@ -1484,7 +1500,7 @@ class MusicPlayer {
             return blobUrl;
         } catch (e) {
             console.error('代理加载音频失败:', e);
-            return track.url; // 回退到原始 URL（可能被静音但不崩溃）
+            throw new Error(`音效加载失败：${e.message || '网络错误'}，请稍后重试或切换其他歌曲`);
         }
     }
 
