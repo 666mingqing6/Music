@@ -47,8 +47,7 @@ class MusicPlayer {
         this._effectInitInProgress = false;
         this._effectApplyId = 0;
 
-        // CORS 代理（用于不支持 CORS 的音频源，如网易云，启用音效时代理音频为 blob URL）
-        this.corsProxy = typeof corsProxyUrl !== 'undefined' ? corsProxyUrl : '';
+        // blob URL 缓存（用于不支持 CORS 的音频源启用音效时，经 Worker 转换为同源 blob URL）
         this._blobUrlCache = new Map();
 
         // API

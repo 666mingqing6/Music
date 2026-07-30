@@ -300,7 +300,3 @@ var localMusic = [
     lrc: 'https://tu.646474.xyz/Time%20To%20Love.lrc'
   }
 ];
-
-// CORS 代理 URL（用于网易云等不支持 CORS 的音频源启用音效时代理音频）
-// 使用自己的代理 proxy.646474.xyz，格式：代理前缀 + 原始URL（直接拼接，不要编码）
-var corsProxyUrl = 'https://proxy.646474.xyz/';
