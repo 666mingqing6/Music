@@ -1449,48 +1449,92 @@ class MusicPlayer {
     }
 
     // 为网易云歌曲获取可被 Web Audio API 处理的音频（同源 blob URL）
-    // 流程：meting-api?format=json → Worker 解析真实 CDN URL → 浏览器直接 fetch CDN（CDN 支持 CORS）→ blob
-    // 不再依赖 proxy.646474.xyz 代理音频文件，避免代理跟随重定向被网易云识别返回 HTML 的问题
+    // 多级回退策略（提升健壮性与冗余）：
+    //   方案A：Worker format=json 解析 CDN URL → 浏览器 fetch CDN（CDN 支持 CORS）
+    //          风险：Worker 出口在海外，部分歌曲被网易云 IP 风控，Worker 拿不到 CDN
+    //   方案B：浏览器直接 fetch Worker 原始 302 接口（redirect:follow）
+    //          Worker 302→music.163.com→CDN，浏览器国内 IP 可达 CDN；
+    //          要求每一跳 302 响应带 CORS 头，music.163.com 的 302 可能无 CORS 而失败
+    //   方案C：都失败则 throw，由上层降级为不开音效的正常播放
     async _getProxiedBlobUrl(url) {
         if (this._blobUrlCache.has(url)) return this._blobUrlCache.get(url);
 
-        // 1. 从 URL 中提取歌曲 ID（meting-api 的 url 字段格式：?server=netease&type=url&id=xxx）
+        // 从 URL 中提取歌曲 ID（meting-api 的 url 字段格式：?server=netease&type=url&id=xxx）
         let songId = null;
         const idMatch = url.match(/[?&]id=(\d+)/);
         if (idMatch) songId = idMatch[1];
         if (!songId) throw new Error('无法从URL提取歌曲ID');
 
-        // 2. 通过 meting-api 的 format=json 接口获取真实 CDN URL（Worker 自己解析重定向，返回 JSON）
-        //    meting-api 已配置 CORS，浏览器可直接 fetch
-        const apiUrl = `https://meting-api.646474.xyz?server=netease&type=url&id=${songId}&format=json`;
-        const resolveController = new AbortController();
-        const resolveTimer = setTimeout(() => resolveController.abort(), 10000);
-        let cdnUrl = null;
+        const errors = [];
+
+        // 方案A：Worker format=json 解析 CDN，再 fetch CDN
         try {
+            const apiUrl = `https://meting-api.646474.xyz?server=netease&type=url&id=${songId}&format=json`;
+            const resolveController = new AbortController();
+            const resolveTimer = setTimeout(() => resolveController.abort(), 10000);
             const resolveResp = await fetch(apiUrl, { signal: resolveController.signal });
             clearTimeout(resolveTimer);
-            if (!resolveResp.ok) throw new Error(`meting-api 返回 ${resolveResp.status}`);
-            const data = await resolveResp.json();
-            if (!data || !data.ok || !data.url) throw new Error(data?.error || '未获取到CDN地址');
-            cdnUrl = data.url;
-            // 升级为 HTTPS：meting-api 返回的是 http://m*.music.126.net，
-            // 在 HTTPS 页面直接 fetch 会触发“混合内容”拦截（active mixed content）；
-            // 该 CDN 同时支持 HTTPS 并发送 Access-Control-Allow-Origin: *，故可安全升级
-            if (cdnUrl.startsWith('http://')) {
-                cdnUrl = 'https://' + cdnUrl.slice(7);
+            if (resolveResp.ok) {
+                const data = await resolveResp.json();
+                if (data && data.ok && data.url) {
+                    let cdnUrl = data.url;
+                    // 升级 HTTPS（CDN 支持 CORS + HTTPS，避免混合内容拦截）
+                    if (cdnUrl.startsWith('http://')) cdnUrl = 'https://' + cdnUrl.slice(7);
+                    console.log('方案A(Worker)解析CDN:', cdnUrl);
+                    const blob = await this._fetchAudioBlob(cdnUrl);
+                    const blobUrl = URL.createObjectURL(blob);
+                    this._blobUrlCache.set(url, blobUrl);
+                    return blobUrl;
+                }
+                errors.push(`Worker: ${data.error || 'no url'}`);
+            } else {
+                errors.push(`Worker HTTP ${resolveResp.status}`);
             }
-            console.log('已解析网易云真实CDN地址:', cdnUrl);
         } catch (e) {
-            clearTimeout(resolveTimer);
-            throw new Error(`解析CDN地址失败: ${e.message}`);
+            errors.push(`Worker: ${e.message}`);
         }
 
-        // 3. 直接 fetch CDN URL（已升级为 https://，m*.music.126.net 支持 CORS，无需代理）
-        const dlController = new AbortController();
-        const dlTimer = setTimeout(() => dlController.abort(), 60000);
+        // 方案B：浏览器直接 fetch Worker 原始 302 接口，跟随重定向到 CDN（利用国内 IP）
         try {
-            const response = await fetch(cdnUrl, { signal: dlController.signal });
+            const directUrl = `https://meting-api.646474.xyz?server=netease&type=url&id=${songId}`;
+            const dlController = new AbortController();
+            const dlTimer = setTimeout(() => dlController.abort(), 60000);
+            const response = await fetch(directUrl, {
+                signal: dlController.signal,
+                redirect: 'follow'
+            });
             clearTimeout(dlTimer);
+            if (response.ok) {
+                const contentType = response.headers.get('content-type') || '';
+                if (contentType.startsWith('audio/') || contentType.startsWith('application/') || contentType.startsWith('video/')) {
+                    const blob = await response.blob();
+                    if (blob.size >= 1024) {
+                        console.log('方案B(浏览器直连)成功, finalUrl:', response.url.slice(0, 60));
+                        const blobUrl = URL.createObjectURL(blob);
+                        this._blobUrlCache.set(url, blobUrl);
+                        return blobUrl;
+                    }
+                    errors.push(`直连: blob过小 ${blob.size}B`);
+                } else {
+                    errors.push(`直连: 非音频 ${contentType.slice(0, 30)}`);
+                }
+            } else {
+                errors.push(`直连 HTTP ${response.status}`);
+            }
+        } catch (e) {
+            errors.push(`直连: ${e.message}`);
+        }
+
+        throw new Error(`所有方案失败 [${errors.join(' | ')}]`);
+    }
+
+    // 下载音频 blob（CDN 支持 CORS，直接 fetch）
+    async _fetchAudioBlob(cdnUrl) {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 60000);
+        try {
+            const response = await fetch(cdnUrl, { signal: controller.signal });
+            clearTimeout(timer);
             if (!response.ok) throw new Error(`CDN返回 ${response.status}`);
             const contentType = response.headers.get('content-type') || '';
             const blob = await response.blob();
@@ -1498,11 +1542,9 @@ class MusicPlayer {
                 throw new Error(`CDN返回非音频内容: ${contentType}`);
             }
             if (blob.size < 1024) throw new Error(`音频文件过小 (${blob.size} bytes)，可能为错误页`);
-            const blobUrl = URL.createObjectURL(blob);
-            this._blobUrlCache.set(url, blobUrl);
-            return blobUrl;
+            return blob;
         } catch (e) {
-            clearTimeout(dlTimer);
+            clearTimeout(timer);
             throw e;
         }
     }
