@@ -351,7 +351,16 @@ class MusicPlayer {
             this.els.lyricsScroll.addEventListener('wheel', () => this.pauseLyricScroll(), { passive: true });
             this.els.lyricsScroll.addEventListener('touchmove', () => this.pauseLyricScroll(true), { passive: true });
         }
-        
+
+        // 封面加载失败兜底：回退到默认封面，避免 broken image
+        if (this.els.coverArt) {
+            this.els.coverArt.onerror = () => {
+                if (this.els.coverArt.src.indexOf('cover.webp') === -1) {
+                    this.els.coverArt.src = './img/cover.webp';
+                }
+            };
+        }
+
         // 键盘快捷键
         document.addEventListener('keydown', e => this.handleKeyboard(e));
     }
@@ -805,15 +814,17 @@ class MusicPlayer {
     
     // 保存播放次数（自动清理：超过 500 条时清除旧数据）
     _savePlayCount() {
-        const keys = Object.keys(this.playCount);
-        if (keys.length > 500) {
-            // 保留最近 200 条
-            const recent = keys.slice(-200);
-            const cleaned = {};
-            recent.forEach(k => { cleaned[k] = this.playCount[k]; });
-            this.playCount = cleaned;
-        }
-        localStorage.setItem('mq_play_count', JSON.stringify(this.playCount));
+        try {
+            const keys = Object.keys(this.playCount);
+            if (keys.length > 500) {
+                // 保留最近 200 条
+                const recent = keys.slice(-200);
+                const cleaned = {};
+                recent.forEach(k => { cleaned[k] = this.playCount[k]; });
+                this.playCount = cleaned;
+            }
+            localStorage.setItem('mq_play_count', JSON.stringify(this.playCount));
+        } catch (e) { /* localStorage 不可用或已满，忽略 */ }
     }
     
     // 获取下一首随机索引：网易云 + 本地音乐整个列表均匀随机，避免连续重复
@@ -957,14 +968,22 @@ class MusicPlayer {
     
     onPlayStateChange(playing) {
         this.isPlaying = playing;
-        
+
         // 更新按钮图标
         const icon = playing ? 'fa-pause' : 'fa-play';
-        this.els.btnPlay.querySelector('i').className = 'fas ' + icon;
-        this.els.mobileBtnPlay.querySelector('i').className = 'fas ' + icon;
-        
+        if (this.els.btnPlay) {
+            const i = this.els.btnPlay.querySelector('i');
+            if (i) i.className = 'fas ' + icon;
+        }
+        if (this.els.mobileBtnPlay) {
+            const i = this.els.mobileBtnPlay.querySelector('i');
+            if (i) i.className = 'fas ' + icon;
+        }
+
         // 封面动画
-        this.els.coverContainer.classList.toggle('playing', playing);
+        if (this.els.coverContainer) {
+            this.els.coverContainer.classList.toggle('playing', playing);
+        }
     }
     
     // 按钮点击兜底机制：2秒后自动移除 active 状态
@@ -1217,8 +1236,9 @@ class MusicPlayer {
         if (!oldAudio) return;
         const newAudio = document.createElement('audio');
         newAudio.id = oldAudio.id || 'audio-player';
-        // 保持音量
+        // 保持音量与预加载策略
         try { newAudio.volume = oldAudio.volume; } catch (e) {}
+        newAudio.preload = oldAudio.preload || 'auto';
         // 替换 DOM 节点
         if (oldAudio.parentNode) {
             oldAudio.parentNode.replaceChild(newAudio, oldAudio);
@@ -1537,6 +1557,7 @@ class MusicPlayer {
                     const blob = await this._fetchAudioBlob(cdnUrl);
                     const blobUrl = URL.createObjectURL(blob);
                     this._blobUrlCache.set(url, blobUrl);
+                    this._cleanupBlobUrlCache();
                     return blobUrl;
                 }
                 errors.push(`Worker: ${data.error || 'no url'}`);
@@ -1565,6 +1586,7 @@ class MusicPlayer {
                         console.log('方案B(浏览器直连)成功, finalUrl:', response.url.slice(0, 60));
                         const blobUrl = URL.createObjectURL(blob);
                         this._blobUrlCache.set(url, blobUrl);
+                        this._cleanupBlobUrlCache();
                         return blobUrl;
                     }
                     errors.push(`直连: blob过小 ${blob.size}B`);
@@ -1579,6 +1601,27 @@ class MusicPlayer {
         }
 
         throw new Error(`所有方案失败 [${errors.join(' | ')}]`);
+    }
+
+    // 清理过期的 blob URL 缓存，防止内存泄漏（保留最近使用的，撤销最早的）
+    // 撤销时同步清除 track._effectUrl，确保下次播放该曲目时重新获取而非引用已失效的 blob
+    _cleanupBlobUrlCache() {
+        const MAX = 30;
+        if (this._blobUrlCache.size <= MAX) return;
+        const keep = 15;
+        const toRemove = this._blobUrlCache.size - keep;
+        let removed = 0;
+        for (const [origUrl, blobUrl] of this._blobUrlCache) {
+            if (removed >= toRemove) break;
+            URL.revokeObjectURL(blobUrl);
+            this._blobUrlCache.delete(origUrl);
+            for (const track of this.playlist) {
+                if (track._effectUrl === blobUrl) {
+                    track._effectUrl = null;
+                }
+            }
+            removed++;
+        }
     }
 
     // 下载音频 blob（CDN 支持 CORS，直接 fetch）
@@ -1596,30 +1639,6 @@ class MusicPlayer {
             }
             if (blob.size < 1024) throw new Error(`音频文件过小 (${blob.size} bytes)，可能为错误页`);
             return blob;
-        } catch (e) {
-            clearTimeout(timer);
-            throw e;
-        }
-    }
-
-    // 解析网易云歌曲的真实 CDN URL（独立方法，供需要 CDN 地址但不需要下载音频的场景使用）
-    async _resolveNeteaseRealUrl(url) {
-        let songId = null;
-        const idMatch = url.match(/[?&]id=(\d+)/);
-        if (idMatch) songId = idMatch[1];
-        if (!songId) throw new Error('无法从URL提取歌曲ID');
-
-        const apiUrl = `https://meting-api.646474.xyz?server=netease&type=url&id=${songId}&format=json`;
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 10000);
-        try {
-            const response = await fetch(apiUrl, { signal: controller.signal });
-            clearTimeout(timer);
-            if (!response.ok) throw new Error(`API返回 ${response.status}`);
-            const data = await response.json();
-            const realUrl = data && data.ok && data.url;
-            if (!realUrl || !realUrl.startsWith('http')) throw new Error(data?.error || 'API未返回有效URL');
-            return realUrl;
         } catch (e) {
             clearTimeout(timer);
             throw e;
@@ -1752,52 +1771,55 @@ class MusicPlayer {
         const hintEl = mobile ? this.els.mobileSearchHint : this.els.searchHint;
         const loadingEl = mobile ? this.els.mobileSearchLoading : this.els.searchLoading;
         if (!resultsEl) return;
-        
+
         if (hintEl) hintEl.style.display = 'none';
         if (loadingEl) loadingEl.style.display = 'block';
         resultsEl.innerHTML = '';
-        
+
         const noResult = '<div style="text-align:center;padding:24px;color:var(--color-text-tertiary)">未找到结果</div>';
         const failResult = '<div style="text-align:center;padding:24px;color:var(--color-text-tertiary)">搜索失败，请重试</div>';
-        
-        // 重试 5 次
-        for (let attempt = 1; attempt <= 5; attempt++) {
+
+        // 优先使用 meting-api 自带搜索（weapi，稳定），失败回退 GD_API
+        const endpoints = [
+            `https://meting-api.646474.xyz/?server=netease&type=search&keyword=${encodeURIComponent(query)}`,
+            `${MusicPlayer.GD_API}?types=search&source=netease&name=${encodeURIComponent(query)}&count=30`
+        ];
+
+        let anySuccess = false; // 标记是否有端点成功响应（即使无结果）
+        for (let attempt = 0; attempt < endpoints.length; attempt++) {
             try {
-                const url = `${MusicPlayer.GD_API}?types=search&source=netease&name=${encodeURIComponent(query)}&count=30`;
-                console.log(`搜索 (第${attempt}次):`, url);
-                
+                const url = endpoints[attempt];
+                console.log(`搜索 (第${attempt + 1}次):`, url);
+
                 const controller = new AbortController();
                 const timer = setTimeout(() => controller.abort(), 10000);
                 const resp = await fetch(url, { signal: controller.signal });
                 clearTimeout(timer);
-                
+
                 if (!resp.ok) throw new Error('HTTP ' + resp.status);
                 const data = await resp.json();
-                
+
                 if (Array.isArray(data) && data.length > 0) {
                     if (loadingEl) loadingEl.style.display = 'none';
                     this.renderSearchResults(data, mobile);
                     return;
                 }
-                resultsEl.innerHTML = noResult;
-                if (loadingEl) loadingEl.style.display = 'none';
-                return;
+                // 成功响应但无结果：继续尝试下一个端点，标记已成功过
+                anySuccess = true;
             } catch (e) {
-                console.warn(`搜索失败 (第${attempt}次):`, e.message);
-                if (attempt < 5) {
-                    await new Promise(r => setTimeout(r, 1000));
-                }
+                console.warn(`搜索失败 (第${attempt + 1}次):`, e.message);
             }
         }
-        
-        resultsEl.innerHTML = failResult;
+
+        // 所有端点都尝试完：有成功响应但无结果 → 未找到；全部失败 → 搜索失败
+        resultsEl.innerHTML = anySuccess ? noResult : failResult;
         if (loadingEl) loadingEl.style.display = 'none';
     }
     
     renderSearchResults(tracks, mobile = false) {
         const html = tracks.map(t => `
             <div class="search-result-item" data-id="${this.escapeHtml(t.id || '')}" data-source="${this.escapeHtml(t.source || 'netease')}" data-picid="${this.escapeHtml(t.pic_id || '')}" data-lyricid="${this.escapeHtml(t.lyric_id || '')}">
-                <img class="search-result-cover" src="" alt="" data-picid="${this.escapeHtml(t.pic_id || '')}" onerror="this.style.display='none'">
+                <img class="search-result-cover" alt="" data-picid="${this.escapeHtml(t.pic_id || '')}" onload="this.style.display=''" onerror="this.style.display='none'">
                 <div class="search-result-info">
                     <div class="search-result-name">${this.escapeHtml(t.name || '')}</div>
                     <div class="search-result-artist">${this.escapeHtml(t.artist || '')}</div>
@@ -1921,21 +1943,6 @@ class MusicPlayer {
     
     async playSearchResult(track) {
         try {
-            // 并行获取 URL 和歌词
-            const urlApi = `${MusicPlayer.GD_API}?types=url&source=${track.source || 'netease'}&id=${track.id}&br=320`;
-            const lyricApi = `${MusicPlayer.GD_API}?types=lyric&source=${track.source || 'netease'}&id=${track.lyric_id || track.id}`;
-            
-            const [urlResp, lrcResp] = await Promise.all([
-                fetch(urlApi).then(r => r.json()).catch(() => ({ url: '' })),
-                fetch(lyricApi).then(r => r.json()).catch(() => ({ lyric: '' }))
-            ]);
-            
-            const audioUrl = urlResp.url || '';
-            if (!audioUrl) {
-                this.showToast('无法获取播放地址，请稍后重试', 'error');
-                return;
-            }
-            
             // 去重：基于 id 查找是否已存在
             const existingIdx = this.playlist.findIndex(t => t._searchId === track.id);
             if (existingIdx !== -1) {
@@ -1949,13 +1956,20 @@ class MusicPlayer {
                 return;
             }
 
+            // track 可能来自 meting-api 搜索（含 url/lrc/pic 302 字段）或旧版 GD_API
+            // 统一通过 meting-api 的 302 接口获取音频与歌词
+            const songId = track.id;
+            const audioUrl = track.url || `https://meting-api.646474.xyz/?server=netease&type=url&id=${songId}`;
+            const lrcUrl = track.lrc || `https://meting-api.646474.xyz/?server=netease&type=lrc&id=${songId}`;
+            const picUrl = track.pic || this._neteaseCoverUrl(track.pic_id, 500);
+
             // 添加到播放列表并播放
             const newTrack = {
                 name: track.name,
                 artist: track.artist,
                 url: audioUrl,
-                pic: this._neteaseCoverUrl(track.pic_id, 500),
-                lrc: lrcResp.lyric || lrcResp.tlyric || '',
+                pic: picUrl,
+                lrc: lrcUrl,
                 source: track.source,
                 _searchId: track.id  // 用于去重标记
             };
@@ -2090,14 +2104,21 @@ class MusicPlayer {
                 e.preventDefault();
                 this.togglePlay();
                 break;
-            case 'ArrowLeft':
-                this.els.audio.currentTime = Math.max(0, this.els.audio.currentTime - 5);
+            case 'ArrowLeft': {
+                const ct = this.els.audio.currentTime;
+                if (isFinite(ct)) {
+                    this.els.audio.currentTime = Math.max(0, ct - 5);
+                }
                 break;
+            }
             case 'ArrowRight': {
                 const d = this.els.audio.duration;
-                this.els.audio.currentTime = isFinite(d) && d > 0
-                    ? Math.min(d, this.els.audio.currentTime + 5)
-                    : this.els.audio.currentTime + 5;
+                const ct = this.els.audio.currentTime;
+                if (isFinite(ct)) {
+                    this.els.audio.currentTime = (isFinite(d) && d > 0)
+                        ? Math.min(d, ct + 5)
+                        : ct + 5;
+                }
                 break;
             }
             case 'ArrowUp':

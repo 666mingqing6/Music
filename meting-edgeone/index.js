@@ -333,10 +333,27 @@ async function handleSong(id, workerOrigin) {
   }];
 }
 
-async function handleUrl(id) {
-  // EdgeOne 边缘节点为国内 IP，理论上可直接 fetch weapi 拿真实 CDN，
-  // 但为统一行为 + 避免网易云对边缘节点的潜在风控，仍用 302 到公开直链，
-  // 让用户浏览器自己的 IP 去跟网易云 302，最稳定
+async function handleUrl(id, format) {
+  // format=json：调用 weapi 获取真实 CDN 地址（用于音效模式下浏览器下载 blob）
+  if (format === 'json') {
+    try {
+      const data = await weapiRequest('/weapi/song/enhance/player/url/v1', {
+        ids: JSON.stringify([parseInt(id) || id]),
+        level: 'standard',
+        encodeType: 'mp3',
+        csrf_token: '',
+      });
+      const d = data && data.data && data.data[0];
+      if (d && d.url) {
+        return { ok: true, url: d.url, size: d.size, type: d.type };
+      }
+      // weapi 未返回（无版权/VIP/海外风控），回退到公开直链
+      return { ok: false, error: 'no url from weapi', url: `https://music.163.com/song/media/outer/url?id=${id}.mp3` };
+    } catch (e) {
+      return { ok: false, error: e.message || 'weapi error', url: `https://music.163.com/song/media/outer/url?id=${id}.mp3` };
+    }
+  }
+  // 默认：302 重定向到公开直链，让浏览器自己的 IP 跟网易云 302，最稳定
   const publicUrl = `https://music.163.com/song/media/outer/url?id=${id}.mp3`;
   return { ok: true, url: publicUrl };
 }
@@ -366,6 +383,53 @@ async function handleLrc(id) {
   return data.lrc ? (data.lrc.lyric || '') : '';
 }
 
+// 网易云搜索（多级回退，提升健壮性）
+// 方案1: weapi/cloudsearch（新版加密搜索）
+// 方案2: 旧版 GET 搜索接口（不需要加密，作为 fallback）
+async function handleSearch(keyword, workerOrigin, limit = 30) {
+  const mapSong = (song, isWeapi) => {
+    const ar = isWeapi ? (song.ar || []) : (song.artists || []);
+    const al = isWeapi ? song.al : song.album;
+    const picUrl = (al && al.picUrl) ? al.picUrl : (al && al.picId ? `https://p1.music.126.net/${al.picId}/${al.picId}.jpg` : '');
+    const picId = extractPicId(picUrl) || song.id;
+    const picSrc = picUrl ? `&src=${encodeURIComponent(picUrl)}` : '';
+    return {
+      id: song.id,
+      name: song.name,
+      artist: ar.map(a => a.name).join('/'),
+      album: (al && al.name) ? al.name : '',
+      pic_id: picId,
+      lyric_id: song.id,
+      pic: `${workerOrigin}?server=netease&type=pic&id=${picId}${picSrc}`,
+      url: `${workerOrigin}?server=netease&type=url&id=${song.id}`,
+      lrc: `${workerOrigin}?server=netease&type=lrc&id=${song.id}`,
+      source: 'netease',
+    };
+  };
+
+  // 方案1: weapi/cloudsearch
+  try {
+    const data = await weapiRequest('/weapi/cloudsearch/get/web', {
+      s: keyword, type: 1, limit, offset: 0,
+    });
+    if (data && data.result && data.result.songs && data.result.songs.length > 0) {
+      return data.result.songs.map(s => mapSong(s, true));
+    }
+  } catch (e) { /* 继续回退 */ }
+
+  // 方案2: 旧版搜索接口（GET，不需要 weapi 加密）
+  try {
+    const searchUrl = `https://music.163.com/api/search/get?s=${encodeURIComponent(keyword)}&type=1&offset=0&limit=${limit}`;
+    const resp = await fetch(searchUrl, { headers: buildHeaders() });
+    const data = await resp.json();
+    if (data && data.result && data.result.songs && data.result.songs.length > 0) {
+      return data.result.songs.map(s => mapSong(s, false));
+    }
+  } catch (e) { /* 继续回退 */ }
+
+  return [];
+}
+
 // ============================================================
 //  EdgeOne 边缘函数入口
 // ============================================================
@@ -383,7 +447,8 @@ async function handleRequest(request) {
   const type = searchParams.get('type') || 'playlist';
   const id = searchParams.get('id');
 
-  if (!id) {
+  // search 接口使用 keyword 参数，不需要 id；其余接口必须有 id
+  if (!id && type !== 'search') {
     return new Response(
       JSON.stringify({ error: 'missing id parameter' }),
       { status: 400, headers: { ...CORS, 'Content-Type': 'application/json; charset=utf-8' } }
@@ -414,7 +479,15 @@ async function handleRequest(request) {
       }
 
       case 'url': {
-        const result = await handleUrl(id);
+        const format = searchParams.get('format');
+        const result = await handleUrl(id, format);
+        // format=json 模式：返回 JSON（含真实 CDN URL，供播放器下载 blob 用）
+        if (format === 'json') {
+          return new Response(JSON.stringify(result), {
+            headers: { ...CORS, 'Content-Type': 'application/json; charset=utf-8' },
+          });
+        }
+        // 默认模式：302 重定向
         if (result && result.ok) {
           return Response.redirect(result.url, 302);
         }
@@ -440,6 +513,15 @@ async function handleRequest(request) {
         const lrc = await handleLrc(id);
         return new Response(lrc || '[00:00.00]暂无歌词', {
           headers: { ...CORS, 'Content-Type': 'text/plain; charset=utf-8' },
+        });
+      }
+
+      case 'search': {
+        // 搜索接口：type=search&keyword=xxx
+        const keyword = searchParams.get('keyword') || searchParams.get('name') || id;
+        const result = await handleSearch(keyword, url.origin);
+        return new Response(JSON.stringify(result), {
+          headers: { ...CORS, 'Content-Type': 'application/json; charset=utf-8' },
         });
       }
 
