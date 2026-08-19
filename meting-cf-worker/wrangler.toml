@@ -4,6 +4,7 @@
 #
 #  项目地址：https://github.com/666mingqing6/Music
 #  用途：替代 api.injahow.cn，直接对接网易云音乐
+#  525 封锁解决：直连失败自动走 proxy.646474.xyz 转发（见 index.js neteaseFetch）
 #
 # ============================================================
 
@@ -11,6 +12,10 @@ name = "meting-api"
 main = "index.js"
 compatibility_date = "2025-01-01"
 
+# 可观测性：Workers 日志（Dashboard → Workers → meting-api → Logs 查看）
+[observability]
+enabled = true
+
 # 免费计划：每天 10 万次请求，个人音乐播放器绰绰有余
-# 如需绑定自定义域名，在 Cloudflare Dashboard 中操作：
-#   Workers & Pages → meting-api → Settings → Triggers → Custom Domains
+# 自定义域名 meting-api.646474.xyz 通过 Dashboard 绑定：
+#   Workers & Pages → meting-api → Settings → Domains & Routes → Add Custom Domain

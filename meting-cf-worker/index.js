@@ -1,22 +1,78 @@
 /**
  * Cloudflare Workers — 自建 Meting API
  *
- * 替代 api.injahow.cn，直接对接网易云音乐 weapi。
- * 支持 playlist / song / url / pic / lrc 五种 type。
+ * 直接对接网易云音乐 weapi，支持 playlist / song / url / pic / lrc / search 六种 type。
+ * url 接口支持 format=json 返回真实 CDN 地址（供播放器音效模式下载 blob）。
  *
- * 部署：
- *   1. npm install -g wrangler
- *   2. wrangler login
- *   3. wrangler deploy
+ * 525 封锁解决方案：
+ *   网易云会封锁 Cloudflare IP 段（fetch music.163.com 返回 525 TLS 握手失败）。
+ *   所有对网易云的请求经 neteaseFetch() 多级回退：
+ *     1. 直连 music.163.com（CF IP 未被封时最快）
+ *     2. 直连失败（网络异常或 521/522/523/525/530）→ 走 proxy.646474.xyz 转发
+ *        （代理出口为非封锁 IP，已验证可完整转发 weapi 加密 POST）
+ *     3. 直连失败后开启 5 分钟熔断，期间请求直接走代理，避免每次等待直连超时
  *
- * 部署后将 js/player.js 里的 this.api 替换为你的 Worker 域名即可。
+ * 部署方式（二选一）：
+ *   A. Cloudflare Dashboard 手动：Workers & Pages → Create → 粘贴本文件
+ *   B. wrangler CLI：wrangler deploy
+ *   C. Cloudflare API：见仓库 README
+ *
+ * 部署后绑定自定义域名 meting-api.646474.xyz（Workers → Settings → Domains & Routes），
+ * js/player.js 的 apiUrl 无需改动。
  */
+
+// ============================================================
+//  上游访问（直连 + 代理多级回退）
+// ============================================================
+
+const PROXY_PREFIX = 'https://proxy.646474.xyz/';
+
+// 熔断器：直连失败后的冷却期（isolate 级共享，记录上游健康状态，非请求状态）
+let _directFailedUntil = 0;
+const DIRECT_BLOCK_MS = 5 * 60 * 1000;
+
+// Cloudflare 边缘到源站连接失败的状态码（525 = SSL 握手失败，即网易云封锁 CF IP）
+function isEdgeConnError(status) {
+  return status === 521 || status === 522 || status === 523 || status === 525 || status === 530;
+}
+
+async function fetchWithTimeout(url, init, ms) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// 对 music.163.com 的统一请求入口：直连优先，失败走代理
+async function neteaseFetch(url, init = {}, timeoutMs = 15000) {
+  const now = Date.now();
+
+  // 熔断期内直接走代理
+  if (now >= _directFailedUntil) {
+    try {
+      const resp = await fetchWithTimeout(url, init, 6000);
+      if (!isEdgeConnError(resp.status)) {
+        return resp; // 直连成功
+      }
+      // 52x 边缘错误：消费掉 body 释放连接，落到代理
+      await resp.text().catch(() => {});
+    } catch (e) {
+      // fetch 异常（超时/DNS/TLS）：落到代理
+    }
+    // 直连不可用：开启熔断
+    _directFailedUntil = now + DIRECT_BLOCK_MS;
+  }
+
+  return fetchWithTimeout(PROXY_PREFIX + url, init, timeoutMs);
+}
 
 // ============================================================
 //  MD5 (RFC 1321) — 纯 JS，Web Crypto 不支持 MD5
 // ============================================================
 
-// input: string（文本）或 Uint8Array（二进制）
 function md5Raw(input) {
   function rotateLeft(x, n) { return (x << n) | (x >>> (32 - n)); }
   function addUnsigned(x, y) { return ((x & 0x7fffffff) + (y & 0x7fffffff)) ^ (x & 0x80000000) ^ (y & 0x80000000); }
@@ -50,7 +106,6 @@ function md5Raw(input) {
     const T = [];
     for (let j = 1; j <= 64; j++) T[j] = Math.floor((1 << 30) * Math.abs(Math.sin(j)));
 
-    // Round 1
     function op(aa_val, bb_val, cc_val, dd_val, k, s, i_idx) {
       return addUnsigned(rotateLeft(addUnsigned(addUnsigned(aa_val, f(bb_val, cc_val, dd_val)), addUnsigned(chunk[k], T[i_idx])), s), bb_val);
     }
@@ -63,7 +118,6 @@ function md5Raw(input) {
     a = op(a, b, c, d, 12, S11, 13); d = op(d, a, b, c, 13, S12, 14);
     c = op(c, d, a, b, 14, S13, 15); b = op(b, c, d, a, 15, S14, 16);
 
-    // Round 2
     function opG(aa_val, bb_val, cc_val, dd_val, k, s, i_idx) {
       return addUnsigned(rotateLeft(addUnsigned(addUnsigned(aa_val, g(bb_val, cc_val, dd_val)), addUnsigned(chunk[k], T[i_idx])), s), bb_val);
     }
@@ -76,7 +130,6 @@ function md5Raw(input) {
     a = opG(a, b, c, d, 13, S21, 29); d = opG(d, a, b, c, 2, S22, 30);
     c = opG(c, d, a, b, 7, S23, 31);  b = opG(b, c, d, a, 12, S24, 32);
 
-    // Round 3
     function opH(aa_val, bb_val, cc_val, dd_val, k, s, i_idx) {
       return addUnsigned(rotateLeft(addUnsigned(addUnsigned(aa_val, h(bb_val, cc_val, dd_val)), addUnsigned(chunk[k], T[i_idx])), s), bb_val);
     }
@@ -89,7 +142,6 @@ function md5Raw(input) {
     a = opH(a, b, c, d, 9, S31, 45);  d = opH(d, a, b, c, 12, S32, 46);
     c = opH(c, d, a, b, 15, S33, 47); b = opH(b, c, d, a, 2, S34, 48);
 
-    // Round 4
     function opI(aa_val, bb_val, cc_val, dd_val, k, s, i_idx) {
       return addUnsigned(rotateLeft(addUnsigned(addUnsigned(aa_val, i(bb_val, cc_val, dd_val)), addUnsigned(chunk[k], T[i_idx])), s), bb_val);
     }
@@ -131,7 +183,6 @@ function bytesToBase64(bytes) {
   return btoa(binary);
 }
 
-// AES-128-CBC encrypt, returns base64 string
 async function aesEncrypt(plaintext, keyStr, ivStr) {
   const encoder = new TextEncoder();
   const data = encoder.encode(plaintext);
@@ -147,7 +198,6 @@ async function aesEncrypt(plaintext, keyStr, ivStr) {
   return bytesToBase64(new Uint8Array(encrypted));
 }
 
-// BigInt modular exponentiation (textbook RSA)
 function modPow(base, exp, mod) {
   let result = 1n;
   base = base % mod;
@@ -168,7 +218,6 @@ function rsaEncrypt(text) {
   );
   const pubkey = 0x010001n;
 
-  // Reverse the text, convert to hex bigint
   const reversed = text.split('').reverse().join('');
   const hex = Array.from(new TextEncoder().encode(reversed))
     .map(b => b.toString(16).padStart(2, '0'))
@@ -184,7 +233,6 @@ function rsaEncrypt(text) {
 
 const NONCE = '0CoJUm6Qyw8W8jud';
 const IV = '0102030405060708';
-// 安全后备：当 BigInt 不可用时的 encSecKey (对应 skey='B3v3kH4vRPWRJFfH')
 const FALLBACK_ENCSECKEY =
   '85302b818aea19b68db899c25dac229412d9bba9b3fcfe4f714dc016bc1686fc' +
   '446a08844b1f8327fd9cb623cc189be00c5a365ac835e93d4858ee66f43fdc59' +
@@ -194,15 +242,12 @@ const FALLBACK_ENCSECKEY =
 async function weapiEncrypt(object) {
   const body = JSON.stringify(object);
 
-  // 生成随机 AES 密钥（或用后备）
   let skey;
   try { skey = randomHex(16); } catch (_) { skey = 'B3v3kH4vRPWRJFfH'; }
 
-  // 两重 AES-128-CBC 加密
   const firstPass = await aesEncrypt(body, NONCE, IV);
   const params = await aesEncrypt(firstPass, skey, IV);
 
-  // RSA 加密 skey
   let encSecKey;
   try {
     encSecKey = rsaEncrypt(skey);
@@ -218,9 +263,8 @@ async function weapiEncrypt(object) {
 // ============================================================
 
 function randomChinaIP() {
-  // PHP Meting 的 IP 范围：112.90.0.0 ~ 112.91.35.255 (中国广东)
   const base = (112 << 24) | (90 << 16);
-  const range = (1 << 16) | (35 << 8) | 255; // ~ 112.91.35.255
+  const range = (1 << 16) | (35 << 8) | 255;
   const ip = base + Math.floor(Math.random() * range);
   return `${(ip >> 24) & 0xff}.${(ip >> 16) & 0xff}.${(ip >> 8) & 0xff}.${ip & 0xff}`;
 }
@@ -239,13 +283,19 @@ async function weapiRequest(path, body) {
   const encrypted = await weapiEncrypt(body);
   const formBody = `params=${encodeURIComponent(encrypted.params)}&encSecKey=${encodeURIComponent(encrypted.encSecKey)}`;
 
-  const url = `https://music.163.com${path}`;
-  const resp = await fetch(url, {
+  const resp = await neteaseFetch(`https://music.163.com${path}`, {
     method: 'POST',
     headers: buildHeaders(),
     body: formBody,
   });
-  return resp.json();
+
+  const text = await resp.text();
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    // 网易云被风控时可能返回 HTML 错误页，给出可诊断的错误信息
+    throw new Error(`netease returned non-JSON (HTTP ${resp.status}): ${text.slice(0, 120)}`);
+  }
 }
 
 // ============================================================
@@ -254,8 +304,6 @@ async function weapiRequest(path, body) {
 
 function neteaseEncryptId(id) {
   const magic = '3go8&$8*3*3h0k(2)2';
-  // 直接操作原始字节，绕过 TextEncoder 的 UTF-8 编码
-  // （XOR 结果可能包含 >127 的字节，UTF-8 会把它扩展成 2 字节导致 MD5 错误）
   const bytes = new Uint8Array(id.length);
   for (let i = 0; i < id.length; i++) {
     bytes[i] = id.charCodeAt(i) ^ magic.charCodeAt(i % magic.length);
@@ -265,8 +313,6 @@ function neteaseEncryptId(id) {
   return b64.replace(/\//g, '_').replace(/\+/g, '-');
 }
 
-// 从网易云 picUrl 中提取数字 ID（避免 JSON.parse 对大数丢失精度）
-// picUrl 格式：https://p4.music.126.net/<encrypted>/<picId>.jpg?param=...
 function extractPicId(picUrl) {
   if (!picUrl) return '';
   const match = picUrl.match(/\/(\d+)\.(jpg|png|webp)/);
@@ -284,7 +330,6 @@ const CORS = {
 };
 
 async function handlePlaylist(id, workerOrigin) {
-  // 第 1 步：获取歌单元数据，拿到全部 trackIds
   const playlistData = await weapiRequest('/weapi/v3/playlist/detail', {
     id: id,
     n: 100000,
@@ -298,7 +343,6 @@ async function handlePlaylist(id, workerOrigin) {
   const trackIds = playlistData.playlist.trackIds;
   if (!trackIds.length) return [];
 
-  // 第 2 步：批量查歌曲详情（每批最多 500 首，一次搞定）
   const allTracks = [];
   const BATCH = 500;
 
@@ -311,11 +355,9 @@ async function handlePlaylist(id, workerOrigin) {
     }
   }
 
-  // 第 3 步：格式化输出
   return allTracks.map(track => {
     const picUrl = (track.al && track.al.picUrl) ? track.al.picUrl : '';
     const picId = extractPicId(picUrl) || track.id;
-    // 把 picUrl 带在 src 参数里，pic 端点直接用，绕开 md5(encryptId)
     const picSrc = picUrl ? `&src=${encodeURIComponent(picUrl)}` : '';
     return {
       name: track.name,
@@ -337,10 +379,8 @@ async function handleSong(id, workerOrigin) {
   }
 
   const song = data.songs[0];
-  // 从 picUrl 提取 pic ID，避免 JS BigInt 精度丢失
   const picUrl = (song.al && song.al.picUrl) ? song.al.picUrl : '';
   const picId = extractPicId(picUrl) || song.id;
-  // 把 picUrl 带在 src 参数里，pic 端点直接用，绕开 md5(encryptId)
   const picSrc = picUrl ? `&src=${encodeURIComponent(picUrl)}` : '';
 
   return [{
@@ -352,16 +392,33 @@ async function handleSong(id, workerOrigin) {
   }];
 }
 
-async function handleUrl(id) {
-  // Cloudflare Worker IP 被网易云封锁，拿不到 mp3 地址
-  // 直接 302 到网易云公开直链，让用户浏览器自己的 IP 去跟
+async function handleUrl(id, format) {
+  // format=json：调用 weapi 获取真实 CDN 地址（用于音效模式下浏览器下载 blob）
+  if (format === 'json') {
+    try {
+      const data = await weapiRequest('/weapi/song/enhance/player/url/v1', {
+        ids: JSON.stringify([parseInt(id) || id]),
+        level: 'standard',
+        encodeType: 'mp3',
+        csrf_token: '',
+      });
+      const d = data && data.data && data.data[0];
+      if (d && d.url) {
+        return { ok: true, url: d.url, size: d.size, type: d.type };
+      }
+      // weapi 未返回（无版权/VIP/风控），回退到公开直链
+      return { ok: false, error: 'no url from weapi', url: `https://music.163.com/song/media/outer/url?id=${id}.mp3` };
+    } catch (e) {
+      return { ok: false, error: e.message || 'weapi error', url: `https://music.163.com/song/media/outer/url?id=${id}.mp3` };
+    }
+  }
+  // 默认：302 重定向到公开直链，让浏览器自己的 IP 跟网易云 302，最稳定
   const publicUrl = `https://music.163.com/song/media/outer/url?id=${id}.mp3`;
   return { ok: true, url: publicUrl };
 }
 
 async function handlePic(id, src) {
   // 优先使用 src 参数里的真实 picUrl（由 playlist/song 端点传入）
-  // 这样完全绕开 md5(encryptId) 计算，不含任何自己算的加密 ID
   if (src) {
     let url = decodeURIComponent(src);
     url = url.replace(/param=\d+y\d+/, 'param=800y800');
@@ -371,7 +428,6 @@ async function handlePic(id, src) {
     return url;
   }
 
-  // 后备：自己算加密 ID 构造 URL（直接访问 ?type=pic&id=xxx 时走这里）
   const encryptedId = neteaseEncryptId(id);
   return `https://p3.music.126.net/${encryptedId}/${id}.jpg?param=800y800`;
 }
@@ -387,8 +443,55 @@ async function handleLrc(id) {
   return data.lrc ? (data.lrc.lyric || '') : '';
 }
 
+// 网易云搜索（多级回退，提升健壮性）
+// 方案1: weapi/cloudsearch（新版加密搜索）
+// 方案2: 旧版 GET 搜索接口（不需要加密，作为 fallback）
+async function handleSearch(keyword, workerOrigin, limit = 30) {
+  const mapSong = (song, isWeapi) => {
+    const ar = isWeapi ? (song.ar || []) : (song.artists || []);
+    const al = isWeapi ? song.al : song.album;
+    const picUrl = (al && al.picUrl) ? al.picUrl : (al && al.picId ? `https://p1.music.126.net/${al.picId}/${al.picId}.jpg` : '');
+    const picId = extractPicId(picUrl) || song.id;
+    const picSrc = picUrl ? `&src=${encodeURIComponent(picUrl)}` : '';
+    return {
+      id: song.id,
+      name: song.name,
+      artist: ar.map(a => a.name).join('/'),
+      album: (al && al.name) ? al.name : '',
+      pic_id: picId,
+      lyric_id: song.id,
+      pic: `${workerOrigin}?server=netease&type=pic&id=${picId}${picSrc}`,
+      url: `${workerOrigin}?server=netease&type=url&id=${song.id}`,
+      lrc: `${workerOrigin}?server=netease&type=lrc&id=${song.id}`,
+      source: 'netease',
+    };
+  };
+
+  // 方案1: weapi/cloudsearch
+  try {
+    const data = await weapiRequest('/weapi/cloudsearch/get/web', {
+      s: keyword, type: 1, limit, offset: 0,
+    });
+    if (data && data.result && data.result.songs && data.result.songs.length > 0) {
+      return data.result.songs.map(s => mapSong(s, true));
+    }
+  } catch (e) { /* 继续回退 */ }
+
+  // 方案2: 旧版搜索接口（GET，不需要 weapi 加密）
+  try {
+    const searchUrl = `https://music.163.com/api/search/get?s=${encodeURIComponent(keyword)}&type=1&offset=0&limit=${limit}`;
+    const resp = await neteaseFetch(searchUrl, { headers: buildHeaders() });
+    const data = await resp.json();
+    if (data && data.result && data.result.songs && data.result.songs.length > 0) {
+      return data.result.songs.map(s => mapSong(s, false));
+    }
+  } catch (e) { /* 继续回退 */ }
+
+  return [];
+}
+
 // ============================================================
-//  Worker 入口
+//  Worker 入口（ES Module 格式）
 // ============================================================
 
 export default {
@@ -405,14 +508,14 @@ export default {
     const type = searchParams.get('type') || 'playlist';
     const id = searchParams.get('id');
 
-    if (!id) {
+    // search 接口使用 keyword 参数，不需要 id；其余接口必须有 id
+    if (!id && type !== 'search') {
       return new Response(
         JSON.stringify({ error: 'missing id parameter' }),
         { status: 400, headers: { ...CORS, 'Content-Type': 'application/json; charset=utf-8' } }
       );
     }
 
-    // 目前只支持 netease
     if (server !== 'netease') {
       return new Response(
         JSON.stringify({ error: `server "${server}" not yet supported` }),
@@ -437,7 +540,15 @@ export default {
         }
 
         case 'url': {
-          const result = await handleUrl(id);
+          const format = searchParams.get('format');
+          const result = await handleUrl(id, format);
+          // format=json 模式：返回 JSON（含真实 CDN URL，供播放器下载 blob 用）
+          if (format === 'json') {
+            return new Response(JSON.stringify(result), {
+              headers: { ...CORS, 'Content-Type': 'application/json; charset=utf-8' },
+            });
+          }
+          // 默认模式：302 重定向
           if (result && result.ok) {
             return Response.redirect(result.url, 302);
           }
@@ -463,6 +574,14 @@ export default {
           const lrc = await handleLrc(id);
           return new Response(lrc || '[00:00.00]暂无歌词', {
             headers: { ...CORS, 'Content-Type': 'text/plain; charset=utf-8' },
+          });
+        }
+
+        case 'search': {
+          const keyword = searchParams.get('keyword') || searchParams.get('name') || id;
+          const result = await handleSearch(keyword, url.origin);
+          return new Response(JSON.stringify(result), {
+            headers: { ...CORS, 'Content-Type': 'application/json; charset=utf-8' },
           });
         }
 
