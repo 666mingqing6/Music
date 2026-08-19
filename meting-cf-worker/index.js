@@ -1,37 +1,44 @@
 /**
- * Cloudflare Workers — 自建 Meting API
+ * Cloudflare Workers - Self-hosted Meting API
  *
- * 直接对接网易云音乐 weapi，支持 playlist / song / url / pic / lrc / search 六种 type。
- * url 接口支持 format=json 返回真实 CDN 地址（供播放器音效模式下载 blob）。
+ * Talks to NetEase Cloud Music weapi directly.
+ * Supports 6 types: playlist / song / url / pic / lrc / search.
+ * url endpoint supports format=json to return the real CDN address
+ * (used by the player to download a blob for audio effects).
  *
- * 525 封锁解决方案：
- *   网易云会封锁 Cloudflare IP 段（fetch music.163.com 返回 525 TLS 握手失败）。
- *   所有对网易云的请求经 neteaseFetch() 多级回退：
- *     1. 直连 music.163.com（CF IP 未被封时最快）
- *     2. 直连失败（网络异常或 521/522/523/525/530）→ 走 proxy.646474.xyz 转发
- *        （代理出口为非封锁 IP，已验证可完整转发 weapi 加密 POST）
- *     3. 直连失败后开启 5 分钟熔断，期间请求直接走代理，避免每次等待直连超时
+ * 525 blocking solution:
+ *   NetEase blocks Cloudflare IP ranges (fetch music.163.com fails with
+ *   525 SSL handshake errors). All upstream requests go through
+ *   neteaseFetch() with multi-level fallback:
+ *     1. Direct connection to music.163.com (fastest when CF IP is fine)
+ *     2. On failure (network error or 521/522/523/525/530) retry through
+ *        proxy.646474.xyz (verified to forward weapi encrypted POSTs fully)
+ *     3. After a direct failure, a 5-minute circuit breaker kicks in so
+ *        subsequent requests go straight to the proxy without waiting
+ *        for the direct timeout
  *
- * 部署方式（二选一）：
- *   A. Cloudflare Dashboard 手动：Workers & Pages → Create → 粘贴本文件
- *   B. wrangler CLI：wrangler deploy
- *   C. Cloudflare API：见仓库 README
+ * Deploy:
+ *   A. Cloudflare Dashboard: Workers & Pages -> Create -> paste this file
+ *   B. wrangler CLI: wrangler deploy
+ *   C. Cloudflare API (see repo README)
  *
- * 部署后绑定自定义域名 meting-api.646474.xyz（Workers → Settings → Domains & Routes），
- * js/player.js 的 apiUrl 无需改动。
+ * Bind custom domain meting-api.646474.xyz afterwards
+ * (Workers -> Settings -> Domains & Routes). js/player.js apiUrl stays unchanged.
  */
 
 // ============================================================
-//  上游访问（直连 + 代理多级回退）
+//  Upstream access (direct + proxy multi-level fallback)
 // ============================================================
 
 const PROXY_PREFIX = 'https://proxy.646474.xyz/';
 
-// 熔断器：直连失败后的冷却期（isolate 级共享，记录上游健康状态，非请求状态）
+// Circuit breaker: cooldown after a direct-connection failure
+// (isolate-level shared, tracks upstream health, not request state)
 let _directFailedUntil = 0;
 const DIRECT_BLOCK_MS = 5 * 60 * 1000;
 
-// Cloudflare 边缘到源站连接失败的状态码（525 = SSL 握手失败，即网易云封锁 CF IP）
+// Cloudflare edge-to-origin connection failure status codes
+// (525 = SSL handshake failure, i.e. NetEase blocking the CF IP)
 function isEdgeConnError(status) {
   return status === 521 || status === 522 || status === 523 || status === 525 || status === 530;
 }
@@ -46,23 +53,22 @@ async function fetchWithTimeout(url, init, ms) {
   }
 }
 
-// 对 music.163.com 的统一请求入口：直连优先，失败走代理
+// Unified entry for requests to music.163.com: direct first, proxy on failure
 async function neteaseFetch(url, init = {}, timeoutMs = 15000) {
   const now = Date.now();
 
-  // 熔断期内直接走代理
   if (now >= _directFailedUntil) {
     try {
       const resp = await fetchWithTimeout(url, init, 6000);
       if (!isEdgeConnError(resp.status)) {
-        return resp; // 直连成功
+        return resp; // direct connection OK
       }
-      // 52x 边缘错误：消费掉 body 释放连接，落到代理
+      // 52x edge error: consume body to release the connection, fall to proxy
       await resp.text().catch(() => {});
     } catch (e) {
-      // fetch 异常（超时/DNS/TLS）：落到代理
+      // fetch error (timeout/DNS/TLS): fall to proxy
     }
-    // 直连不可用：开启熔断
+    // Direct unavailable: open the circuit breaker
     _directFailedUntil = now + DIRECT_BLOCK_MS;
   }
 
@@ -70,7 +76,7 @@ async function neteaseFetch(url, init = {}, timeoutMs = 15000) {
 }
 
 // ============================================================
-//  MD5 (RFC 1321) — 纯 JS，Web Crypto 不支持 MD5
+//  MD5 (RFC 1321) - pure JS, Web Crypto has no MD5
 // ============================================================
 
 function md5Raw(input) {
@@ -228,7 +234,7 @@ function rsaEncrypt(text) {
 }
 
 // ============================================================
-//  Netease weapi encryption
+//  NetEase weapi encryption
 // ============================================================
 
 const NONCE = '0CoJUm6Qyw8W8jud';
@@ -259,7 +265,7 @@ async function weapiEncrypt(object) {
 }
 
 // ============================================================
-//  Netease API 请求
+//  NetEase API requests
 // ============================================================
 
 function randomChinaIP() {
@@ -293,13 +299,13 @@ async function weapiRequest(path, body) {
   try {
     return JSON.parse(text);
   } catch (e) {
-    // 网易云被风控时可能返回 HTML 错误页，给出可诊断的错误信息
+    // NetEase risk-control may return an HTML error page; surface a diagnosable error
     throw new Error(`netease returned non-JSON (HTTP ${resp.status}): ${text.slice(0, 120)}`);
   }
 }
 
 // ============================================================
-//  netease_encryptId — 用于构造图片直链
+//  netease_encryptId - used to build direct image URLs
 // ============================================================
 
 function neteaseEncryptId(id) {
@@ -320,7 +326,7 @@ function extractPicId(picUrl) {
 }
 
 // ============================================================
-//  API 处理器
+//  API handlers
 // ============================================================
 
 const CORS = {
@@ -393,7 +399,8 @@ async function handleSong(id, workerOrigin) {
 }
 
 async function handleUrl(id, format) {
-  // format=json：调用 weapi 获取真实 CDN 地址（用于音效模式下浏览器下载 blob）
+  // format=json: call weapi to get the real CDN address
+  // (used by the player in audio-effect mode to download a blob)
   if (format === 'json') {
     try {
       const data = await weapiRequest('/weapi/song/enhance/player/url/v1', {
@@ -406,19 +413,19 @@ async function handleUrl(id, format) {
       if (d && d.url) {
         return { ok: true, url: d.url, size: d.size, type: d.type };
       }
-      // weapi 未返回（无版权/VIP/风控），回退到公开直链
+      // weapi returned nothing (no license / VIP / risk control): fall back to the public link
       return { ok: false, error: 'no url from weapi', url: `https://music.163.com/song/media/outer/url?id=${id}.mp3` };
     } catch (e) {
       return { ok: false, error: e.message || 'weapi error', url: `https://music.163.com/song/media/outer/url?id=${id}.mp3` };
     }
   }
-  // 默认：302 重定向到公开直链，让浏览器自己的 IP 跟网易云 302，最稳定
+  // Default: 302 redirect to the public link so the browser's own IP follows NetEase's redirect (most stable)
   const publicUrl = `https://music.163.com/song/media/outer/url?id=${id}.mp3`;
   return { ok: true, url: publicUrl };
 }
 
 async function handlePic(id, src) {
-  // 优先使用 src 参数里的真实 picUrl（由 playlist/song 端点传入）
+  // Prefer the real picUrl passed via the src parameter (provided by playlist/song endpoints)
   if (src) {
     let url = decodeURIComponent(src);
     url = url.replace(/param=\d+y\d+/, 'param=800y800');
@@ -443,9 +450,9 @@ async function handleLrc(id) {
   return data.lrc ? (data.lrc.lyric || '') : '';
 }
 
-// 网易云搜索（多级回退，提升健壮性）
-// 方案1: weapi/cloudsearch（新版加密搜索）
-// 方案2: 旧版 GET 搜索接口（不需要加密，作为 fallback）
+// NetEase search (multi-level fallback for robustness)
+// Plan 1: weapi/cloudsearch (new encrypted search)
+// Plan 2: legacy GET search endpoint (no encryption needed, as fallback)
 async function handleSearch(keyword, workerOrigin, limit = 30) {
   const mapSong = (song, isWeapi) => {
     const ar = isWeapi ? (song.ar || []) : (song.artists || []);
@@ -467,7 +474,7 @@ async function handleSearch(keyword, workerOrigin, limit = 30) {
     };
   };
 
-  // 方案1: weapi/cloudsearch
+  // Plan 1: weapi/cloudsearch
   try {
     const data = await weapiRequest('/weapi/cloudsearch/get/web', {
       s: keyword, type: 1, limit, offset: 0,
@@ -475,9 +482,9 @@ async function handleSearch(keyword, workerOrigin, limit = 30) {
     if (data && data.result && data.result.songs && data.result.songs.length > 0) {
       return data.result.songs.map(s => mapSong(s, true));
     }
-  } catch (e) { /* 继续回退 */ }
+  } catch (e) { /* fall through */ }
 
-  // 方案2: 旧版搜索接口（GET，不需要 weapi 加密）
+  // Plan 2: legacy search endpoint (GET, no weapi encryption)
   try {
     const searchUrl = `https://music.163.com/api/search/get?s=${encodeURIComponent(keyword)}&type=1&offset=0&limit=${limit}`;
     const resp = await neteaseFetch(searchUrl, { headers: buildHeaders() });
@@ -485,13 +492,13 @@ async function handleSearch(keyword, workerOrigin, limit = 30) {
     if (data && data.result && data.result.songs && data.result.songs.length > 0) {
       return data.result.songs.map(s => mapSong(s, false));
     }
-  } catch (e) { /* 继续回退 */ }
+  } catch (e) { /* fall through */ }
 
   return [];
 }
 
 // ============================================================
-//  Worker 入口（ES Module 格式）
+//  Worker entry (ES Module format)
 // ============================================================
 
 export default {
@@ -499,7 +506,7 @@ export default {
     const url = new URL(request.url);
     const { searchParams } = url;
 
-    // OPTIONS 预检
+    // OPTIONS preflight
     if (request.method === 'OPTIONS') {
       return new Response(null, { headers: CORS });
     }
@@ -508,7 +515,7 @@ export default {
     const type = searchParams.get('type') || 'playlist';
     const id = searchParams.get('id');
 
-    // search 接口使用 keyword 参数，不需要 id；其余接口必须有 id
+    // search uses the keyword parameter and needs no id; others require id
     if (!id && type !== 'search') {
       return new Response(
         JSON.stringify({ error: 'missing id parameter' }),
@@ -542,13 +549,13 @@ export default {
         case 'url': {
           const format = searchParams.get('format');
           const result = await handleUrl(id, format);
-          // format=json 模式：返回 JSON（含真实 CDN URL，供播放器下载 blob 用）
+          // format=json mode: return JSON (with the real CDN URL for the player's blob download)
           if (format === 'json') {
             return new Response(JSON.stringify(result), {
               headers: { ...CORS, 'Content-Type': 'application/json; charset=utf-8' },
             });
           }
-          // 默认模式：302 重定向
+          // Default mode: 302 redirect
           if (result && result.ok) {
             return Response.redirect(result.url, 302);
           }
@@ -572,7 +579,8 @@ export default {
 
         case 'lrc': {
           const lrc = await handleLrc(id);
-          return new Response(lrc || '[00:00.00]暂无歌词', {
+          // \u6682\u65e0\u6b4c\u8bcd = "no lyrics yet" (unicode-escaped to keep source pure ASCII)
+          return new Response(lrc || '[00:00.00]\u6682\u65e0\u6b4c\u8bcd', {
             headers: { ...CORS, 'Content-Type': 'text/plain; charset=utf-8' },
           });
         }
