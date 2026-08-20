@@ -3,6 +3,10 @@ var userId = "12675886878";
 var userServer = "netease";
 var userType = "playlist";
 
+// Meting API 基地址（自建 Cloudflare Worker，仓库：666mingqing6/meting-api）
+// 全站唯一 API 配置入口：歌单/搜索/歌词/音效代理/账户同步全部经此
+var metingApiBase = "https://meting-api.646474.xyz";
+
 // 随机播放（加权洗牌）参数
 // shufflePrior：新歌冷启动平滑底数。新歌按"已播 prior 次"参与排序，
 //               每播一次让一步，播 prior 次后与普通歌平权。越大 = 新歌特权越小

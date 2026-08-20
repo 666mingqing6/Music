@@ -1,86 +1,55 @@
-<p align="center">
-<img src="https://user-images.githubusercontent.com/2666735/30651452-58ae6c88-9deb-11e7-9e13-6beae3f6c54c.png" alt="Meting">
-</p>
+# MQ Music · 音乐馆
 
-# meting-api
+沉浸式个人音乐播放器（纯静态前端，零构建），数据来自[自建 Meting API](https://github.com/666mingqing6/meting-api)（Cloudflare Workers + D1）。
 
-## Descriptions
+## 功能
 
-- 这是基于 [Meting](https://github.com/metowolf/Meting) 创建的 APlayer API
-- 灵感源于 [https://api.fczbl.vip/163/](https://api.fczbl.vip/163/)
-- 部分参考 [Meting-API](https://github.com/metowolf/Meting-API)
+- **网易云歌单 + 本地音乐混合播放**：`config.js` 配置网易云歌单 ID 与本地音乐直链
+- **加权洗牌"平均随机"**：Gumbel-top 加权无放回抽样
+  - 一轮内零重复（告别"过几首又播同一首"）
+  - 播放次数低的歌优先，长期收敛到人人平等
+  - 新歌按"已播 4 次"起步（贝叶斯平滑），优先但不霸占
+- **账户系统**：注册/登录后播放计数云端同步（D1），换浏览器/设备不丢失；游客模式完整可用（纯 localStorage）
+- **Web Audio 音效**：3D 环绕 / 沉浸 / 现场感 / 迷幻 / 流行 / 重低音
+- **逐行 + 逐字歌词**、MediaSession（锁屏控制）、移动端适配、PWA
 
-## Build Setup
+## 架构
 
-```bash
-# 克隆仓库
-$ git clone https://github.com/injahow/meting-api.git
-
-$ cd meting-api
-
-# 安装依赖
-$ composer install
-
-# 或者使用中国镜像
-$ composer config -g repo.packagist composer https://packagist.phpcomposer.com
-
-$ composer install
+```
+├── index.html        # 入口页面
+├── config.js         # 唯一配置入口（API 地址 / 歌单 / 本地音乐 / 随机参数）
+├── js/
+│   ├── player.js     # 播放器核心（播放/歌词/音效/搜索/洗牌队列）
+│   ├── playstats.js  # 播放计数（song_key 稳定标识 + 云同步调度）
+│   └── auth.js       # 账户模块（登录/注册/登出 + 计数同步 UI）
+├── css/modern.css    # 样式
+├── img/              # 图标与默认封面
+└── manifest.json     # PWA manifest
 ```
 
-或者下载打包文件[https://github.com/injahow/meting-api/releases](https://github.com/injahow/meting-api/releases)
+后端 API（独立仓库）：[666mingqing6/meting-api](https://github.com/666mingqing6/meting-api)
+- 音乐数据：`?type=playlist|song|url|pic|lrc|search`（网易云 weapi 直连 + 代理回退解决 525 封锁）
+- 账户：`/auth/register|login|logout` + `/user/playcounts`（D1 存储，PBKDF2 密码哈希 + 登录限流）
 
-或者直接使用 Meting.php
+## 配置（config.js）
 
-```php
-// include __DIR__ . '/vendor/autoload.php';
-include __DIR__ . '/src/Meting.php';
+```js
+var userId = "12675886878";     // 网易云歌单 ID
+var metingApiBase = "https://meting-api.646474.xyz";  // API 地址（全站唯一）
+var shufflePrior = 4;           // 新歌冷启动平滑底数（越大新歌特权越小）
+var shuffleAlpha = 1;           // 播放次数偏置强度（0=纯均匀，1=线性）
+var localMusic = [ ... ];       // 本地音乐（url/cover/lrc 直链）
 ```
 
-修改代码参数
+## 部署（Cloudflare Pages）
 
-```php
-<?php
-// 设置API路径（可默认）
-define('API_URI', api_uri());
-// 设置中文歌词
-define('TLYRIC', true);
-// 设置歌单文件缓存及时间
-define('CACHE', false);
-define('CACHE_TIME', 86400);
-// 设置短期缓存-需要安装apcu
-define('APCU_CACHE', false);
-// 设置AUTH密钥-更改'meting-secret'
-define('AUTH', false);
-define('AUTH_SECRET', 'meting-secret');
+纯静态站，两种方式：
 
-......
-```
+1. **Dashboard 连接 GitHub**：Workers & Pages → Create → Pages → Connect to Git → 选本仓库，框架预设 `None`，构建命令留空，输出目录 `/`。之后 push 即自动部署。
+2. **wrangler 直传**：`npx wrangler pages deploy . --project-name=music`
 
-## Demo
+国内访问：`*.pages.dev` 同样被 DNS 污染，参照 meting-api 仓库 README 的华为云 DNS 方案（CNAME + 大陆 A 记录指向 CF 边缘 IP）。
 
-API-Demo:
+## 致谢
 
-- [https://api.injahow.cn/meting/?type=url&id=416892104](https://api.injahow.cn/meting/?type=url&id=416892104)
-- [https://api.injahow.cn/meting/?type=song&id=591321](https://api.injahow.cn/meting/?type=song&id=591321)
-- [https://api.injahow.cn/meting/?type=playlist&id=2619366284](https://api.injahow.cn/meting/?type=playlist&id=2619366284)
-
-APlayer-Demo:
-
-- [https://injahow.github.io/meting-api/](https://injahow.github.io/meting-api/)
-- [https://injahow.github.io/meting-api/?id=2904749230](https://injahow.github.io/meting-api/?id=2904749230)
-
-## Thanks
-
-- [APlayer](https://github.com/MoePlayer/APlayer)
-- [Meting](https://github.com/metowolf/Meting)
-- [MetingJS](https://github.com/metowolf/MetingJS)
-
-## Requirement
-
-PHP 5.4+ and BCMath, Curl, OpenSSL extension installed.
-
-## License
-
-[MIT](https://github.com/injahow/meting-api/blob/master/LICENSE) license.
-
-Copyright (c) 2019 injahow
+基于 [HeoMusic](https://github.com/zhheo/HeoMusic)（Apache-2.0）深度重构。

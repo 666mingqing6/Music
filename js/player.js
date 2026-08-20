@@ -33,8 +33,10 @@ class MusicPlayer {
         this._lyricLoadId = 0;
 
         // 播放统计（song_key 稳定计数 + 云同步）与账户模块
+        // API 基地址统一从 config.js 的 metingApiBase 读取（全站唯一配置入口）
+        this.apiBase = (typeof metingApiBase !== 'undefined') ? metingApiBase : 'https://meting-api.646474.xyz';
         this.stats = new PlayStats();
-        this.auth = new AuthModule('https://meting-api.646474.xyz');
+        this.auth = new AuthModule(this.apiBase);
         this.stats.attachAuth(this.auth);
 
         // 加权洗牌队列（Gumbel-top）：一轮内零重复，播放次数低的歌期望排前
@@ -59,7 +61,7 @@ class MusicPlayer {
         this._blobUrlCache = new Map();
 
         // API
-        this.apiUrl = 'https://meting-api.646474.xyz/?server=:server&type=:type&id=:id&r=:r';
+        this.apiUrl = this.apiBase + '/?server=:server&type=:type&id=:id&r=:r';
 
         // DOM 元素缓存
         this.els = {};
@@ -1608,7 +1610,7 @@ class MusicPlayer {
 
         // 方案A：Worker format=json 解析 CDN，再 fetch CDN
         try {
-            const apiUrl = `https://meting-api.646474.xyz?server=netease&type=url&id=${songId}&format=json`;
+            const apiUrl = `${this.apiBase}?server=netease&type=url&id=${songId}&format=json`;
             const resolveController = new AbortController();
             const resolveTimer = setTimeout(() => resolveController.abort(), 10000);
             const resolveResp = await fetch(apiUrl, { signal: resolveController.signal });
@@ -1636,7 +1638,7 @@ class MusicPlayer {
 
         // 方案B：浏览器直接 fetch Worker 原始 302 接口，跟随重定向到 CDN（利用国内 IP）
         try {
-            const directUrl = `https://meting-api.646474.xyz?server=netease&type=url&id=${songId}`;
+            const directUrl = `${this.apiBase}?server=netease&type=url&id=${songId}`;
             const dlController = new AbortController();
             const dlTimer = setTimeout(() => dlController.abort(), 60000);
             const response = await fetch(directUrl, {
@@ -1853,7 +1855,7 @@ class MusicPlayer {
 
         // 优先使用 meting-api 自带搜索（weapi，稳定），失败回退 GD_API
         const endpoints = [
-            `https://meting-api.646474.xyz/?server=netease&type=search&keyword=${encodeURIComponent(query)}`,
+            `${this.apiBase}/?server=netease&type=search&keyword=${encodeURIComponent(query)}`,
             `${MusicPlayer.GD_API}?types=search&source=netease&name=${encodeURIComponent(query)}&count=30`
         ];
 
@@ -2032,8 +2034,8 @@ class MusicPlayer {
             // track 可能来自 meting-api 搜索（含 url/lrc/pic 302 字段）或旧版 GD_API
             // 统一通过 meting-api 的 302 接口获取音频与歌词
             const songId = track.id;
-            const audioUrl = track.url || `https://meting-api.646474.xyz/?server=netease&type=url&id=${songId}`;
-            const lrcUrl = track.lrc || `https://meting-api.646474.xyz/?server=netease&type=lrc&id=${songId}`;
+            const audioUrl = track.url || `${this.apiBase}/?server=netease&type=url&id=${songId}`;
+            const lrcUrl = track.lrc || `${this.apiBase}/?server=netease&type=lrc&id=${songId}`;
             const picUrl = track.pic || this._neteaseCoverUrl(track.pic_id, 500);
 
             // 添加到播放列表并播放

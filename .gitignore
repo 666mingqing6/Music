@@ -1,18 +1,14 @@
-
 .DS_Store
-/music/
-musiclist.json
 node_modules
 upload.sh
 
-# Python
-__pycache__/
-*.pyc
-
-# Deduplicator sample data (开发用)
-Deduplicator/sample_data/
-
-# 开发工具输出
+# 本地音乐整理输出（不入库）
+/music/
+musiclist.json
 LocalMusicFiles/
 download.log
 local_files_manifest.json
+
+# 开发工具临时产物
+.trae-html-share-packages/
+*.log
