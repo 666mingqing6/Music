@@ -724,6 +724,158 @@ input[type="range"] {
     color: var(--color-text-tertiary);
 }
 
+/* ========== 账户弹窗 ========== */
+#user-popup {
+    position: absolute;
+    bottom: calc(100% + 8px);
+    right: 0;
+    width: 240px;
+    background: rgba(20, 20, 20, 0.96);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg);
+    border: 1px solid var(--color-border);
+    padding: var(--space-sm);
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(6px);
+    transition: opacity 0.25s var(--ease-out), transform 0.25s var(--ease-out), visibility 0s 0.25s;
+    z-index: 100;
+}
+
+#user-popup.active {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+    transition: opacity 0.25s var(--ease-out), transform 0.25s var(--ease-out), visibility 0s 0s;
+}
+
+.user-popup-title {
+    font-size: 0.72rem;
+    color: var(--color-text-tertiary);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    padding: var(--space-xs) var(--space-sm) var(--space-sm);
+    border-bottom: 1px solid var(--color-border);
+    margin-bottom: var(--space-sm);
+}
+
+#user-login-form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+    padding: 0 var(--space-xs);
+}
+
+#user-name-input,
+#user-pass-input {
+    width: 100%;
+    padding: 8px 10px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--color-border);
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--color-text-primary);
+    font-size: 0.85rem;
+    outline: none;
+    transition: border-color 0.18s var(--ease-out);
+    box-sizing: border-box;
+}
+
+#user-name-input:focus,
+#user-pass-input:focus {
+    border-color: var(--color-accent);
+}
+
+.user-form-btns {
+    display: flex;
+    gap: var(--space-sm);
+}
+
+.user-form-btns button {
+    flex: 1;
+    padding: 8px 0;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--color-border);
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--color-text-secondary);
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: background 0.18s var(--ease-out), color 0.18s var(--ease-out), border-color 0.18s var(--ease-out);
+}
+
+.user-form-btns button:hover {
+    background: var(--color-surface-hover);
+    color: var(--color-text-primary);
+}
+
+.user-form-btns button:first-child {
+    background: rgba(59, 130, 246, 0.15);
+    border-color: rgba(59, 130, 246, 0.35);
+    color: var(--color-accent-light);
+}
+
+.user-form-btns button:first-child:hover {
+    background: rgba(59, 130, 246, 0.25);
+    color: #fff;
+}
+
+.user-form-msg {
+    font-size: 0.75rem;
+    color: var(--color-text-tertiary);
+    min-height: 1em;
+    word-break: break-all;
+}
+
+.user-form-msg.error {
+    color: #f87171;
+}
+
+.user-form-hint {
+    font-size: 0.68rem;
+    color: var(--color-text-tertiary);
+    opacity: 0.7;
+    line-height: 1.4;
+}
+
+#user-logged {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+    padding: 0 var(--space-xs) var(--space-xs);
+}
+
+.user-logged-name-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--color-text-primary);
+}
+
+.user-logged-name-row i {
+    color: #4ade80;
+    font-size: 0.9rem;
+}
+
+/* 已登录时用户按钮带小圆点标识 */
+#btn-user.logged-in {
+    position: relative;
+}
+
+#btn-user.logged-in::after {
+    content: '';
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #4ade80;
+    box-shadow: 0 0 4px rgba(74, 222, 128, 0.8);
+}
+
 /* ========== 右侧面板 ========== */
 #player-panel {
     display: flex;

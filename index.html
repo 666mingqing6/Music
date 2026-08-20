@@ -120,6 +120,36 @@
                             </div>
                         </div>
                     </div>
+
+                    <div id="user-control" class="control-btn-wrap">
+                        <button id="btn-user" class="control-btn" title="账户">
+                            <i class="fas fa-user"></i>
+                        </button>
+                        <div id="user-popup">
+                            <div class="user-popup-title">账户</div>
+                            <div id="user-login-form">
+                                <input type="text" id="user-name-input" placeholder="用户名" autocomplete="username">
+                                <input type="password" id="user-pass-input" placeholder="密码（至少 6 位）" autocomplete="current-password">
+                                <div class="user-form-btns">
+                                    <button id="btn-user-login">登录</button>
+                                    <button id="btn-user-register">注册</button>
+                                </div>
+                                <div id="user-form-msg" class="user-form-msg"></div>
+                                <div class="user-form-hint">登录后播放记录云端同步，换浏览器不丢失</div>
+                            </div>
+                            <div id="user-logged" style="display:none">
+                                <div class="user-logged-name-row">
+                                    <i class="fas fa-circle-check"></i>
+                                    <span id="user-name-display"></span>
+                                </div>
+                                <div id="user-sync-info" class="user-form-msg"></div>
+                                <div class="user-form-btns">
+                                    <button id="btn-sync-now">立即同步</button>
+                                    <button id="btn-logout">退出登录</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </section>
 
@@ -286,6 +316,8 @@
             if (overlay) overlay.classList.add('hidden');
         }, 1500);
     </script>
+    <script src="./js/playstats.js"></script>
+    <script src="./js/auth.js"></script>
     <script src="./js/player.js"></script>
 </body>
 </html>

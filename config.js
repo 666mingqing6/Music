@@ -1,7 +1,15 @@
 // 默认配置
-var userId = "12675886878"; 
+var userId = "12675886878";
 var userServer = "netease";
 var userType = "playlist";
+
+// 随机播放（加权洗牌）参数
+// shufflePrior：新歌冷启动平滑底数。新歌按"已播 prior 次"参与排序，
+//               每播一次让一步，播 prior 次后与普通歌平权。越大 = 新歌特权越小
+// shuffleAlpha：播放次数偏置强度。0 = 纯均匀洗牌（仅保证轮内不重复），
+//               1 = 线性偏置（推荐），>1 = 更激进地拉平播放次数差距
+var shufflePrior = 4;
+var shuffleAlpha = 1;
 
 // 本地音乐配置
 var localMusic = [

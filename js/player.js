@@ -32,8 +32,16 @@ class MusicPlayer {
         this._loadId = 0;
         this._lyricLoadId = 0;
 
-        // 播放次数统计（平均随机用，localStorage 持久化）
-        this.playCount = this._loadPlayCount();
+        // 播放统计（song_key 稳定计数 + 云同步）与账户模块
+        this.stats = new PlayStats();
+        this.auth = new AuthModule('https://meting-api.646474.xyz');
+        this.stats.attachAuth(this.auth);
+
+        // 加权洗牌队列（Gumbel-top）：一轮内零重复，播放次数低的歌期望排前
+        this.shuffleQueue = [];
+        this.sqPos = 0;
+        this._playlistVersion = 0;   // 歌单每次重建（renderQueue）递增
+        this._shuffleVersion = -1;   // 队列构建时的歌单版本，不一致则重建
 
         // 错误自动恢复：连续出错计数 + 跳过定时器
         this._consecutiveErrors = 0;
@@ -67,22 +75,26 @@ class MusicPlayer {
         this.cacheElements();
         this.bindEvents();
         this.initVolume();
-        
+        this.auth.initUI(this);
+
         // 先立即隐藏加载遮罩，不等数据加载
         setTimeout(() => {
             if (this.els.loadingOverlay) {
                 this.els.loadingOverlay.classList.add('hidden');
             }
         }, 300);
-        
+
         try {
             await this.loadPlaylist();
+            // 旧版以列表索引存的播放计数迁移到 song_key（歌单变动也不丢）
+            this._migrateOldPlayCount();
             this.renderQueue();
             if (this.playlist.length > 0) {
-                const randomIndex = Math.floor(Math.random() * this.playlist.length);
-                this.playPath = [randomIndex];
+                // 首曲来自加权洗牌队列：天然是播放次数最低的一批
+                const firstIdx = this._drawNextIndex();
+                this.playPath = [firstIdx];
                 this.pathPos = 0;
-                this.loadTrack(randomIndex, true);
+                this.loadTrack(firstIdx, true);
             }
             // 封面解析延迟到浏览器空闲时执行，避免与首曲音频加载竞争网络/主线程
             // 导致"打开后要点播放但需等封面解析完才能播"的卡顿
@@ -246,6 +258,12 @@ class MusicPlayer {
             const effectControl = document.getElementById('effect-control');
             if (effectControl && !effectControl.contains(e.target)) {
                 effectControl.classList.remove('active');
+            }
+            // 同时关闭账户弹窗
+            const userControl = document.getElementById('user-control');
+            if (userControl && !userControl.contains(e.target)) {
+                const userPopup = document.getElementById('user-popup');
+                if (userPopup) userPopup.classList.remove('active');
             }
         });
         
@@ -463,9 +481,8 @@ class MusicPlayer {
             currentCoverImg.style.display = '';
         }
 
-        // 记录播放次数（平均随机用）
-        this.playCount[index] = (this.playCount[index] || 0) + 1;
-        this._savePlayCount();
+        // 记录播放次数（加权洗牌用，song_key 稳定标识，登录后自动同步云端）
+        this.stats.increment(PlayStats.keyFor(track));
 
         // 播放状态
         this.els.coverContainer.classList.toggle('playing', false);
@@ -805,41 +822,89 @@ class MusicPlayer {
     
     // ========== 播放控制 ==========
     
-    // 读取播放次数（localStorage）
-    _loadPlayCount() {
-        try {
-            return JSON.parse(localStorage.getItem('mq_play_count') || '{}');
-        } catch { return {}; }
-    }
-    
-    // 保存播放次数（自动清理：超过 500 条时清除旧数据）
-    _savePlayCount() {
-        try {
-            const keys = Object.keys(this.playCount);
-            if (keys.length > 500) {
-                // 保留最近 200 条
-                const recent = keys.slice(-200);
-                const cleaned = {};
-                recent.forEach(k => { cleaned[k] = this.playCount[k]; });
-                this.playCount = cleaned;
-            }
-            localStorage.setItem('mq_play_count', JSON.stringify(this.playCount));
-        } catch (e) { /* localStorage 不可用或已满，忽略 */ }
-    }
-    
-    // 获取下一首随机索引：网易云 + 本地音乐整个列表均匀随机，避免连续重复
-    _getLeastPlayedIndex(excludeIdx) {
-        if (this.playlist.length === 0) return -1;
-        if (this.playlist.length === 1) return 0;
+    // ========== 加权洗牌（"平均随机"核心） ==========
+    // Gumbel-top 加权无放回抽样：每首歌 key = -ln(random) / (PRIOR + alpha×播放次数)
+    // 按 key 降序排列即本轮播放队列。三条性质：
+    //   1. 轮内零重复（排列天然保证）——解决"过几首又出现同一首"的生日悖论
+    //   2. 播放次数低的歌期望排前——长期收敛到人人平等
+    //   3. PRIOR 贝叶斯平滑：新歌从"相当于已播 PRIOR 次"起步，播一次让一步，
+    //      几首后新鲜度耗尽，不会霸占播放位
+    _buildShuffleQueue() {
+        this._shuffleVersion = this._playlistVersion;
+        const n = this.playlist.length;
+        if (n === 0) { this.shuffleQueue = []; this.sqPos = 0; return; }
 
-        // 候选为除当前歌曲外的所有索引（两个歌单视为一个整体池）
-        const candidates = [];
-        for (let i = 0; i < this.playlist.length; i++) {
-            if (i !== excludeIdx) candidates.push(i);
+        const prior = (typeof shufflePrior !== 'undefined') ? shufflePrior : 4;
+        const alpha = (typeof shuffleAlpha !== 'undefined') ? shuffleAlpha : 1;
+
+        const items = this.playlist.map((track, idx) => {
+            const eff = prior + alpha * this.stats.get(PlayStats.keyFor(track));
+            // +1e-12 防 Math.random()===0 时 ln 爆炸
+            return { idx, k: -Math.log(Math.random() + 1e-12) / eff };
+        });
+        items.sort((a, b) => b.k - a.k);   // key 大 = 有效次数低 = 优先
+        this.shuffleQueue = items.map(i => i.idx);
+        this.sqPos = 0;
+
+        // 轮首去重：新一轮第一首与当前曲相同（且歌单>1）时交换，避免衔接重复
+        if (this.shuffleQueue.length > 1 && this.shuffleQueue[0] === this.currentIndex) {
+            const t = this.shuffleQueue[0];
+            this.shuffleQueue[0] = this.shuffleQueue[1];
+            this.shuffleQueue[1] = t;
         }
-        // 兜底：只剩当前歌曲可放
-        if (candidates.length === 0) return excludeIdx >= 0 ? excludeIdx : 0;
-        return candidates[Math.floor(Math.random() * candidates.length)];
+    }
+
+    // 从洗牌队列取下一首（队列耗尽或歌单变动时自动重建 = 新一轮）
+    _drawNextIndex() {
+        if (this.playlist.length === 0) return -1;
+        if (this._shuffleVersion !== this._playlistVersion || this.sqPos >= this.shuffleQueue.length) {
+            this._buildShuffleQueue();
+        }
+        // 跳过已失效的索引（歌单重建后旧 index 可能越界；版本机制兜底再查一次）
+        while (this.sqPos < this.shuffleQueue.length) {
+            const idx = this.shuffleQueue[this.sqPos];
+            if (idx >= 0 && idx < this.playlist.length) {
+                this.sqPos++;
+                return idx;
+            }
+            this.sqPos++;
+        }
+        // 队列全部失效：重建一次
+        this._buildShuffleQueue();
+        if (this.shuffleQueue.length === 0) return -1;
+        const idx = this.shuffleQueue[this.sqPos++];
+        return idx;
+    }
+
+    // 手动点播后从未消费的队列中移除，保证该曲本轮不会"再抽到一次"
+    _removeFromQueue(idx) {
+        for (let i = this.sqPos; i < this.shuffleQueue.length; i++) {
+            if (this.shuffleQueue[i] === idx) {
+                this.shuffleQueue.splice(i, 1);
+                return;
+            }
+        }
+    }
+
+    // 旧版播放计数迁移：mq_play_count 以列表索引为 key，按当前歌单顺序映射到 song_key
+    // （迁移只做一次；旧歌单若已变动，对得上的部分仍能保留）
+    _migrateOldPlayCount() {
+        try {
+            if (localStorage.getItem('mq_play_count_migrated')) return;
+            const old = JSON.parse(localStorage.getItem('mq_play_count') || '{}');
+            if (old && typeof old === 'object') {
+                for (const idxStr in old) {
+                    const track = this.playlist[parseInt(idxStr)];
+                    if (track) {
+                        const key = PlayStats.keyFor(track);
+                        const v = old[idxStr] | 0;
+                        if (v > (this.stats.counts[key] || 0)) this.stats.counts[key] = v;
+                    }
+                }
+                this.stats._save();
+            }
+            localStorage.setItem('mq_play_count_migrated', '1');
+        } catch { /* ignore */ }
     }
 
     // 限制播放路径长度，避免长时间使用后无限增长（仅裁剪已播放过的历史，不影响当前位置）
@@ -878,8 +943,8 @@ class MusicPlayer {
             const index = this.playPath[this.pathPos];
             this.loadTrack(index, this.isPlaying);
         } else if (this.playMode === 'shuffle') {
-            // 路径开头：重新随机一首
-            const index = this._getLeastPlayedIndex(this.currentIndex);
+            // 路径开头：从洗牌队列取一首插到最前
+            const index = this._drawNextIndex();
             this.playPath.unshift(index);
             this.pathPos = 0;
             this._capPlayPath();
@@ -891,19 +956,19 @@ class MusicPlayer {
             this.loadTrack(index, this.isPlaying);
         }
     }
-    
+
     next(forceAutoplay = false) {
         let index;
         if (this.playMode === 'shuffle') {
-            // 如果路径上还有后续，就走确定路线
+            // 路径上还有后续：走既定路线（含"上一首"回退后再前进）
             if (this.pathPos < this.playPath.length - 1) {
                 this.pathPos++;
                 index = this.playPath[this.pathPos];
             } else {
-                // 新歌：追加到路径末尾
-                index = this._getLeastPlayedIndex(this.currentIndex);
+                // 新歌：从加权洗牌队列取（队列耗尽自动进入新一轮）
+                index = this._drawNextIndex();
                 this.playPath.push(index);
-                this.pathPos++;
+                this.pathPos = this.playPath.length - 1;
                 this._capPlayPath();
             }
         } else {
@@ -953,9 +1018,10 @@ class MusicPlayer {
                     this.pathPos++;
                     index = this.playPath[this.pathPos];
                 } else {
-                    index = this._getLeastPlayedIndex(this.currentIndex);
+                    // 从加权洗牌队列取下一首（队列耗尽自动进入新一轮）
+                    index = this._drawNextIndex();
                     this.playPath.push(index);
-                    this.pathPos++;
+                    this.pathPos = this.playPath.length - 1;
                     this._capPlayPath();
                 }
             } else {
@@ -1674,6 +1740,8 @@ class MusicPlayer {
     // ========== 播放列表 ==========
     
     renderQueue() {
+        // 歌单重建（初始加载/搜索加歌），洗牌队列版本失效，下次抽取时自动重建
+        this._playlistVersion++;
         this.els.queueCount.textContent = this.playlist.length + ' 首歌曲';
         
         const html = this.playlist.map((track, idx) => {
@@ -1700,20 +1768,24 @@ class MusicPlayer {
         this.els.queueList.querySelectorAll('.queue-item').forEach(el => {
             el.onclick = async () => {
                 try {
-                    await this.loadTrack(parseInt(el.dataset.idx), true);
+                    const idx = parseInt(el.dataset.idx);
+                    this._removeFromQueue(idx);   // 点播后从本轮队列移除，避免同轮重复
+                    await this.loadTrack(idx, true);
                 } catch (e) {
                     console.error('加载歌曲失败:', e);
                 }
             };
         });
-        
+
         // 移动端列表
         if (this.els.mobileQueueList) {
             this.els.mobileQueueList.innerHTML = html;
             this.els.mobileQueueList.querySelectorAll('.queue-item').forEach(el => {
                 el.onclick = async () => {
                     try {
-                        await this.loadTrack(parseInt(el.dataset.idx), true);
+                        const idx = parseInt(el.dataset.idx);
+                        this._removeFromQueue(idx);
+                        await this.loadTrack(idx, true);
                         this.closeMobileQueue();
                     } catch (e) {
                         console.error('加载歌曲失败:', e);
@@ -1947,6 +2019,7 @@ class MusicPlayer {
             const existingIdx = this.playlist.findIndex(t => t._searchId === track.id);
             if (existingIdx !== -1) {
                 // 已存在，直接播放
+                this._removeFromQueue(existingIdx);
                 this.playPath.push(existingIdx);
                 this.pathPos = this.playPath.length - 1;
                 this._capPlayPath();
