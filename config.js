@@ -310,5 +310,61 @@ var localMusic = [
     url: 'https://tu.646474.xyz/Time%20To%20Love.mp3',
     cover: 'https://tu.646474.xyz/Time%20To%20Love.jpg',
     lrc: 'https://tu.646474.xyz/Time%20To%20Love.lrc'
+  },
+  {
+    name: 'Lullaby(Radio Edit)',
+    artist: 'Enzalla',
+    url: 'https://tu.646474.xyz/Lullaby.mp3',
+    cover: 'https://tu.646474.xyz/Lullaby.jpg',
+    lrc: 'https://tu.646474.xyz/Lullaby.lrc'
+  },
+  {
+    name: 'Normal No More',
+    artist: 'TYSM',
+    url: 'https://tu.646474.xyz/Normal%20No%20More.mp3',
+    cover: 'https://tu.646474.xyz/Normal%20No%20More.jpg',
+    lrc: 'https://tu.646474.xyz/Normal%20No%20More.lrc'
+  },
+  {
+    name: 'color-X',
+    artist: '徐梦圆',
+    url: 'https://tu.646474.xyz/color-X.mp3',
+    cover: 'https://tu.646474.xyz/color-X.jpg',
+    lrc: 'https://tu.646474.xyz/%E7%BA%AF%E9%9F%B3%E4%B9%90.lrc'
+  },
+  {
+    name: 'Lightning Moment feat.fox capture plan',
+    artist: 'DJ OKAWARI/fox capture plan',
+    url: 'https://tu.646474.xyz/Lightning%20Moment%20feat.mp3',
+    cover: 'https://tu.646474.xyz/Lightning%20Moment%20feat.jpg',
+    lrc: 'https://tu.646474.xyz/%E7%BA%AF%E9%9F%B3%E4%B9%90.lrc'
+  },
+  {
+    name: 'Letting Go',
+    artist: '蔡健雅',
+    url: 'https://tu.646474.xyz/Letting%20Go.mp3',
+    cover: 'https://tu.646474.xyz/Letting%20Go.jpg',
+    lrc: 'https://tu.646474.xyz/Letting%20Go.lrc'
+  },
+  {
+    name: 'time machine (2024 Radio Edit)',
+    artist: 'mj apanay/aren park',
+    url: 'https://tu.646474.xyz/time%20machine%20_2024%20Radio%20Edit.mp3',
+    cover: 'https://tu.646474.xyz/time%20machine%20_2024%20Radio%20Edit.jpg',
+    lrc: 'https://tu.646474.xyz/time%20machine%20_2024%20Radio%20Edit.lrc'
+  },
+  {
+    name: '바람에 쓰는 편지',
+    artist: 'July',
+    url: 'https://tu.646474.xyz/%20_%20.mp3',
+    cover: 'https://tu.646474.xyz/%20_%20.jpg',
+    lrc: 'https://tu.646474.xyz/%20_%20.lrc'
+  },
+  {
+    name: '咏春 (DJ版)',
+    artist: 'DJ阿布',
+    url: 'https://tu.646474.xyz/%E5%92%8F%E6%98%A5%20_DJ%E7%89%88.mp3',
+    cover: 'https://tu.646474.xyz/%E5%92%8F%E6%98%A5%20_DJ%E7%89%88.jpg',
+    lrc: 'https://tu.646474.xyz/%E5%92%8F%E6%98%A5%20_DJ%E7%89%88.lrc'
   }
 ];
