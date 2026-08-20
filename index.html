@@ -128,12 +128,13 @@
                         <div id="user-popup">
                             <div class="user-popup-title">账户</div>
                             <div id="user-login-form">
+                                <div class="user-tabs">
+                                    <button type="button" id="tab-user-login" class="user-tab active">登录</button>
+                                    <button type="button" id="tab-user-register" class="user-tab">注册</button>
+                                </div>
                                 <input type="text" id="user-name-input" placeholder="用户名" autocomplete="username">
                                 <input type="password" id="user-pass-input" placeholder="密码（至少 6 位）" autocomplete="current-password">
-                                <div class="user-form-btns">
-                                    <button id="btn-user-login">登录</button>
-                                    <button id="btn-user-register">注册</button>
-                                </div>
+                                <button type="button" id="btn-user-submit" class="user-submit-btn">登录</button>
                                 <div id="user-form-msg" class="user-form-msg"></div>
                                 <div class="user-form-hint">登录后播放记录云端同步，换浏览器不丢失</div>
                             </div>

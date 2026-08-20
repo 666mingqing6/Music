@@ -787,6 +787,57 @@ input[type="range"] {
     border-color: var(--color-accent);
 }
 
+/* 登录/注册选项卡 */
+.user-tabs {
+    display: flex;
+    gap: 4px;
+    padding: 3px;
+    border-radius: var(--radius-sm);
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.user-tab {
+    flex: 1;
+    padding: 7px 0;
+    border: none;
+    border-radius: calc(var(--radius-sm) - 2px);
+    background: transparent;
+    color: var(--color-text-tertiary);
+    font-size: 0.82rem;
+    cursor: pointer;
+    transition: background 0.18s var(--ease-out), color 0.18s var(--ease-out);
+}
+
+.user-tab:hover {
+    color: var(--color-text-primary);
+}
+
+.user-tab.active {
+    background: rgba(59, 130, 246, 0.22);
+    color: var(--color-accent-light);
+    font-weight: 600;
+}
+
+/* 主提交按钮（文案随选项卡切换：登录/注册） */
+.user-submit-btn {
+    width: 100%;
+    padding: 9px 0;
+    border-radius: var(--radius-sm);
+    border: 1px solid rgba(59, 130, 246, 0.35);
+    background: rgba(59, 130, 246, 0.15);
+    color: var(--color-accent-light);
+    font-size: 0.88rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.18s var(--ease-out), color 0.18s var(--ease-out);
+}
+
+.user-submit-btn:hover {
+    background: rgba(59, 130, 246, 0.28);
+    color: #fff;
+}
+
+/* 已登录视图的操作按钮（立即同步/退出登录） */
 .user-form-btns {
     display: flex;
     gap: var(--space-sm);

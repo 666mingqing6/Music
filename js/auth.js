@@ -112,16 +112,18 @@ class AuthModule {
     initUI(player) {
         this.player = player;
         this.stats = player.stats;
+        this.mode = 'login';   // 'login' | 'register'（选项卡当前模式）
 
         this.els = {
             btnUser: document.getElementById('btn-user'),
             popup: document.getElementById('user-popup'),
             loginForm: document.getElementById('user-login-form'),
             logged: document.getElementById('user-logged'),
+            tabLogin: document.getElementById('tab-user-login'),
+            tabRegister: document.getElementById('tab-user-register'),
             nameInput: document.getElementById('user-name-input'),
             passInput: document.getElementById('user-pass-input'),
-            btnLogin: document.getElementById('btn-user-login'),
-            btnRegister: document.getElementById('btn-user-register'),
+            btnSubmit: document.getElementById('btn-user-submit'),
             formMsg: document.getElementById('user-form-msg'),
             nameDisplay: document.getElementById('user-name-display'),
             syncInfo: document.getElementById('user-sync-info'),
@@ -136,18 +138,22 @@ class AuthModule {
             this.els.popup.classList.toggle('active');
         };
 
-        // 登录
-        if (this.els.btnLogin) {
-            this.els.btnLogin.onclick = () => this._doLogin(false);
+        // 选项卡切换：登录 <-> 注册
+        if (this.els.tabLogin) {
+            this.els.tabLogin.onclick = () => this._setMode('login');
         }
-        // 注册
-        if (this.els.btnRegister) {
-            this.els.btnRegister.onclick = () => this._doLogin(true);
+        if (this.els.tabRegister) {
+            this.els.tabRegister.onclick = () => this._setMode('register');
+        }
+
+        // 提交按钮：按当前选项卡执行登录或注册
+        if (this.els.btnSubmit) {
+            this.els.btnSubmit.onclick = () => this._doLogin(this.mode === 'register');
         }
         // 回车提交
         [this.els.nameInput, this.els.passInput].forEach(el => {
             if (el) el.onkeydown = e => {
-                if (e.key === 'Enter') this._doLogin(false);
+                if (e.key === 'Enter') this._doLogin(this.mode === 'register');
             };
         });
         // 立即同步 / 退出
@@ -168,6 +174,21 @@ class AuthModule {
         this._renderState();
     }
 
+    // 切换登录/注册模式：页签高亮 + 主按钮文案联动
+    _setMode(mode) {
+        this.mode = mode;
+        if (this.els.tabLogin) {
+            this.els.tabLogin.classList.toggle('active', mode === 'login');
+        }
+        if (this.els.tabRegister) {
+            this.els.tabRegister.classList.toggle('active', mode === 'register');
+        }
+        if (this.els.btnSubmit) {
+            this.els.btnSubmit.textContent = mode === 'login' ? '登录' : '注册';
+        }
+        this._setMsg('');
+    }
+
     _setMsg(text, isError) {
         if (!this.els.formMsg) return;
         this.els.formMsg.textContent = text || '';
@@ -182,7 +203,7 @@ class AuthModule {
         if (logged) {
             if (this.els.nameDisplay) this.els.nameDisplay.textContent = this.username;
         } else {
-            this._setMsg('');
+            this._setMode('login');   // 未登录/已登出时重置为登录选项卡
         }
         // 已登录时按钮加个小标识
         if (this.els.btnUser) {
