@@ -16,7 +16,6 @@ class MusicPlayer {
         // 歌词滚动状态
         this.isLyricScrolling = false;
         this.lyricScrollTimer = null;
-        this.lyricScrollRAF = null;
 
         // 封面缓存
         this.coverCache = new Map();
@@ -583,10 +582,10 @@ class MusicPlayer {
         this.els.coverArt.src = coverUrl;
         this.els.bgCover.style.backgroundImage = `url(${coverUrl})`;
 
-        // 更新当前播放项的缩略图
+        // 更新当前播放项的缩略图（用小尺寸图，与列表一致；主封面用 800y800）
         const currentCoverImg = document.querySelector(`.queue-item[data-idx="${this.currentIndex}"] .queue-item-cover`);
         if (currentCoverImg) {
-            currentCoverImg.src = coverUrl;
+            currentCoverImg.src = this._thumbUrlFor(track);
             currentCoverImg.style.opacity = '1';
             currentCoverImg.style.display = '';
         }
@@ -2315,8 +2314,9 @@ class MusicPlayer {
     
     escapeHtml(text) {
         const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
+        div.textContent = text == null ? '' : String(text);
+        // innerHTML 转义 & < >；补转义引号，确保在 HTML 属性中安全使用
+        return div.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
     }
 
     // ========== Toast 提示 ==========
