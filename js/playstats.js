@@ -2,7 +2,9 @@
  * 播放统计模块
  * - song_key 稳定标识（网易云 ne:{id} / 本地 lo:{url}），歌单增删改序不影响计数
  * - localStorage 本地存储（游客模式完整可用）
- * - 登录后防抖全量同步到 D1（约 300 条 JSON 仅 ~10KB，一个请求）
+ * - 登录后"播放即同步"：2 秒合并窗口防抖 → 上报前先 GET 云端 mergeMax
+ *   （PUT 是全量替换语义，不合并会被别台设备的更高计数覆盖）→ 全量 PUT
+ * - 关页兜底：pagehide 时 keepalive 直接 PUT（见 auth.js）
  */
 class PlayStats {
     constructor() {
@@ -10,6 +12,7 @@ class PlayStats {
         this.auth = null;              // AuthModule，登录后注入
         this._syncTimer = null;
         this._dirty = false;           // 有未上报的本地变更
+        this._syncing = false;         // 上报串行锁（防并发 PUT 乱序）
         this._load();
     }
 
@@ -85,19 +88,39 @@ class PlayStats {
         this.auth = auth;
     }
 
+    // 播放即同步：2 秒合并窗口（快速连切多首只发一个请求），到点上报
     _scheduleSync() {
         if (!this.auth || !this.auth.isLoggedIn()) return;
         clearTimeout(this._syncTimer);
-        this._syncTimer = setTimeout(() => { this.flush(); }, 10000);
+        this._syncTimer = setTimeout(() => { this.flush(); }, 2000);
     }
 
     // 全量上报（幂等，失败下次重试）
+    // 上报前先拉云端 mergeMax：PUT 是全量替换，若别台设备上报过更高计数，
+    // 直接 PUT 本地旧值会把它覆盖回去
     async flush() {
         if (!this.auth || !this.auth.isLoggedIn() || !this._dirty) return;
+        if (this._syncing) { this._scheduleSync(); return; }   // 已有上报进行中，稍后重试
+        this._syncing = true;
         clearTimeout(this._syncTimer);
         try {
+            try {
+                const remote = await this.auth.fetchPlayCounts();
+                this.mergeMax(remote);
+            } catch { /* 云端拉取失败也要尽力上报本地数据 */ }
             const ok = await this.auth.putPlayCounts(this.counts);
             if (ok) this._dirty = false;
         } catch { /* 网络异常，下次再试 */ }
+        finally { this._syncing = false; }
+    }
+
+    // 关页兜底：页面即将销毁，来不及 GET 合并，keepalive 直接 PUT 本地全量
+    // （本会话内每次 flush 都已 merge 过云端，本地值 >= 云端，直接 PUT 安全）
+    flushOnExit() {
+        if (!this.auth || !this.auth.isLoggedIn() || !this._dirty) return;
+        try {
+            const p = this.auth.putPlayCounts(this.counts, true);
+            p.then(ok => { if (ok) this._dirty = false; }).catch(() => {});
+        } catch { /* ignore */ }
     }
 }

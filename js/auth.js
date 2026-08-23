@@ -92,9 +92,10 @@ class AuthModule {
         return data.counts || {};
     }
 
-    async putPlayCounts(counts) {
+    async putPlayCounts(counts, keepalive = false) {
         const resp = await fetch(this.apiBase + '/user/playcounts', {
             method: 'PUT',
+            keepalive,   // 关页兜底场景：页面销毁后浏览器仍把请求发完
             headers: {
                 'Content-Type': 'application/json',
                 'Authorization': 'Bearer ' + this.token,
@@ -164,12 +165,30 @@ class AuthModule {
             this.els.btnLogout.onclick = () => this._doLogout();
         }
 
-        // 页面隐藏时冲刷未上报的计数
+        // 页面隐藏时冲刷未上报的计数（完整流程：GET 合并 + PUT）
         document.addEventListener('visibilitychange', () => {
             if (document.visibilityState === 'hidden') {
                 this.stats.flush();
             }
         });
+
+        // 关页兜底：pagehide 时页面即将销毁，用 keepalive 直接 PUT 本地全量
+        // （visibilitychange 在部分移动端浏览器关页时不可靠，双保险）
+        window.addEventListener('pagehide', () => {
+            this.stats.flushOnExit();
+        });
+
+        // 已登录开页：后台拉云端计数合并到本地
+        // - 开页后的洗牌队列直接用最新计数（别台设备播过的记录立即可见）
+        // - 防止本地旧数据在下次全量 PUT 时把云端更高计数覆盖回去
+        if (this.isLoggedIn()) {
+            this.fetchPlayCounts().then(remote => {
+                if (this.stats.mergeMax(remote) && this.player) {
+                    // 云端有更新：作废已构建的洗牌队列，下首歌起用最新计数重建
+                    this.player._shuffleVersion = -1;
+                }
+            }).catch(() => { /* 拉取失败不阻塞开页，登录/同步时再合并 */ });
+        }
 
         this._renderState();
     }
@@ -237,8 +256,7 @@ class AuthModule {
         try {
             const remote = await this.fetchPlayCounts();
             this.stats.mergeMax(remote);
-            await this.stats.flush();
-            // flush 只在 _dirty 时上报；登录场景强制全量同步一次
+            // 登录场景强制全量同步一次（不受 _dirty 限制，把合并结果落库）
             await this.putPlayCounts(this.stats.exportAll());
             this.stats._dirty = false;
             this._setMsg('');
