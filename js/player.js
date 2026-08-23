@@ -13,9 +13,6 @@ class MusicPlayer {
         this.lyrics = [];
         this.currentLyricIndex = -1;
 
-        // 封面 URL 缓存（用于列表缩略图）
-        this.coverUrlCache = new Map();
-
         // 歌词滚动状态
         this.isLyricScrolling = false;
         this.lyricScrollTimer = null;
@@ -63,8 +60,8 @@ class MusicPlayer {
         // blob URL 缓存（用于不支持 CORS 的音频源启用音效时，经 Worker 转换为同源 blob URL）
         this._blobUrlCache = new Map();
 
-        // API
-        this.apiUrl = this.apiBase + '/?server=:server&type=:type&id=:id&r=:r';
+        // 列表当前高亮元素（updateQueueHighlight O(1) 用）
+        this._activeQueueEls = [];
 
         // DOM 元素缓存
         this.els = {};
@@ -97,14 +94,6 @@ class MusicPlayer {
                 this.loadTrack(firstIdx, true);
             } else {
                 this._revealOnce();   // 空歌单：无曲可等，直接揭开
-            }
-            // 封面解析延迟到浏览器空闲时执行，避免与首曲音频加载竞争网络/主线程
-            // 导致"打开后要点播放但需等封面解析完才能播"的卡顿
-            const coverTask = () => { this.resolveAllCovers().catch(() => {}); };
-            if ('requestIdleCallback' in window) {
-                requestIdleCallback(coverTask, { timeout: 3000 });
-            } else {
-                setTimeout(coverTask, 800);
             }
         } catch (error) {
             console.error('初始化失败:', error);
@@ -338,11 +327,51 @@ class MusicPlayer {
         // 音频事件（封装为方法，便于 _teardownAudioGraph 重建 audio 元素后重新绑定）
         this._bindAudioEvents();
         
+        // 播放列表点击（事件委托：一次绑定代替逐项绑定，加歌/重渲染无需重绑）
+        if (this.els.queueList) {
+            this.els.queueList.onclick = async e => {
+                const item = e.target.closest('.queue-item');
+                if (!item) return;
+                try {
+                    const idx = parseInt(item.dataset.idx);
+                    this._removeFromQueue(idx);   // 点播后从本轮队列移除，避免同轮重复
+                    await this.loadTrack(idx, true);
+                } catch (err) {
+                    console.error('加载歌曲失败:', err);
+                }
+            };
+        }
+        if (this.els.mobileQueueList) {
+            this.els.mobileQueueList.onclick = async e => {
+                const item = e.target.closest('.queue-item');
+                if (!item) return;
+                try {
+                    const idx = parseInt(item.dataset.idx);
+                    this._removeFromQueue(idx);
+                    await this.loadTrack(idx, true);
+                    this.closeMobileQueue();
+                } catch (err) {
+                    console.error('加载歌曲失败:', err);
+                }
+            };
+        }
+
+        // 歌词点击跳转（事件委托，容器为静态节点只绑一次）
+        const bindLyricClick = container => {
+            if (!container) return;
+            container.onclick = e => {
+                const line = e.target.closest('.lyric-line');
+                if (line) this.seekToLyric(parseFloat(line.dataset.time));
+            };
+        };
+        bindLyricClick(this.els.lyricsContainer);
+        bindLyricClick(this.els.mobileLyricsContainer);
+
         // 搜索功能
         if (this.els.queueSearchInput) {
             this.els.queueSearchInput.oninput = e => this.filterQueue(e.target.value);
         }
-        
+
         // 移动端列表搜索
         if (this.els.mobileQueueSearchInput) {
             this.els.mobileQueueSearchInput.oninput = e => this.filterMobileQueue(e.target.value);
@@ -404,52 +433,121 @@ class MusicPlayer {
     }
     
     // ========== 数据加载 ==========
-    
+
+    // 歌单加载（stale-while-revalidate 策略）：
+    //   有缓存 → 立即用缓存渲染（秒开）；过期则在后台刷新最新歌单
+    //   无缓存（首次访问）→ 网络加载（重试 3 次），失败降级为仅本地音乐
     async loadPlaylist() {
         const localData = typeof localMusic !== 'undefined' ? localMusic : [];
         // 本地音乐倒序：config.js 中最后面的歌曲在播放列表中排在最前
         // 这样网易云歌单在前，本地音乐（倒序）在后
         const reversedLocal = [...localData].reverse();
-        
-        // 重试 3 次
+
+        const cache = this._readPlaylistCache();
+        if (cache) {
+            this.playlist = this._composePlaylist(cache.data, reversedLocal);
+            if (Date.now() - cache.at > 5 * 60 * 1000) {
+                this._refreshPlaylistInBackground(reversedLocal);
+            }
+            return;
+        }
+
+        const onlineData = await this._fetchPlaylistOnline();
+        if (onlineData) {
+            this._writePlaylistCache(onlineData);
+            this.playlist = this._composePlaylist(onlineData, reversedLocal);
+        } else {
+            console.warn('歌单 API 3 次均失败，仅使用本地音乐');
+            this.playlist = reversedLocal;
+        }
+    }
+
+    _composePlaylist(onlineData, reversedLocal) {
+        // 网易云歌单在前 + 本地音乐（倒序）在后
+        return [...onlineData, ...reversedLocal];
+    }
+
+    async _fetchPlaylistOnline() {
+        const server = typeof userServer !== 'undefined' ? userServer : 'netease';
+        const type = typeof userType !== 'undefined' ? userType : 'playlist';
+        const id = typeof userId !== 'undefined' ? userId : '12675886878';
+        const url = `${this.apiBase}/?server=${encodeURIComponent(server)}&type=${encodeURIComponent(type)}&id=${encodeURIComponent(id)}`;
+
         for (let attempt = 1; attempt <= 3; attempt++) {
             try {
-                const url = this.apiUrl
-                    .replace(':server', typeof userServer !== 'undefined' ? userServer : 'netease')
-                    .replace(':type', typeof userType !== 'undefined' ? userType : 'playlist')
-                    .replace(':id', typeof userId !== 'undefined' ? userId : '12675886878')
-                    .replace(':r', Math.random());
-                
-                console.log(`API 请求 (第${attempt}次):`, url);
-                
                 const controller = new AbortController();
                 const timer = setTimeout(() => controller.abort(), 8000);
                 const response = await fetch(url, { signal: controller.signal });
                 clearTimeout(timer);
-                
+
                 if (response.ok) {
-                    const onlineData = await response.json();
-                    if (Array.isArray(onlineData) && onlineData.length > 0) {
-                        console.log('API 成功，获取到', onlineData.length, '首歌曲');
-                        // 网易云歌单在前 + 本地音乐（倒序）在后
-                        this.playlist = [...onlineData, ...reversedLocal];
-                        return;
-                    }
+                    const data = await response.json();
+                    if (Array.isArray(data) && data.length > 0) return data;
                 }
-                console.warn(`API 第${attempt}次返回无效数据`);
+                console.warn(`歌单 API 第 ${attempt} 次返回无效数据`);
             } catch (error) {
-                console.warn(`API 请求失败 (第${attempt}次):`, error.message);
+                console.warn(`歌单 API 请求失败 (第 ${attempt} 次):`, error.message);
             }
-            
             // 未到最后一次就等一会再重试
             if (attempt < 3) {
                 await new Promise(r => setTimeout(r, 1500));
             }
         }
-        
-        // 3 次都失败，仅使用本地音乐（保持倒序）
-        console.log('API 3 次均失败，仅使用本地音乐');
-        this.playlist = reversedLocal;
+        return null;
+    }
+
+    // 后台刷新歌单：拿到最新数据后热更新列表，不打断正在播放的音频
+    _refreshPlaylistInBackground(reversedLocal) {
+        this._fetchPlaylistOnline().then(data => {
+            if (!data) return;
+            this._writePlaylistCache(data);
+
+            const freshBase = this._composePlaylist(data, reversedLocal);
+            // 保留本次会话中搜索点播加入的歌曲（不在歌单缓存里），按 song_key 去重
+            const freshKeys = new Set(freshBase.map(t => PlayStats.keyFor(t)));
+            const added = this.playlist.filter(t => t._searchId && !freshKeys.has(PlayStats.keyFor(t)));
+            const fresh = freshBase.concat(added);
+
+            // 歌单无变化：跳过重渲染
+            if (fresh.length === this.playlist.length &&
+                JSON.stringify(fresh) === JSON.stringify(this.playlist)) return;
+
+            // 按 song_key 定位当前曲在新列表中的位置（歌单增删/排序后仍连续播放）
+            const currentKey = PlayStats.keyFor(this.playlist[this.currentIndex]);
+            let newIdx = currentKey ? fresh.findIndex(t => PlayStats.keyFor(t) === currentKey) : -1;
+            if (newIdx < 0) newIdx = 0;
+            this.playlist = fresh;
+            this.currentIndex = newIdx;
+            this.playPath = [newIdx];
+            this.pathPos = 0;
+            this.renderQueue();
+        }).catch(() => { /* 刷新失败保持现状，下次开页再试 */ });
+    }
+
+    _readPlaylistCache() {
+        try {
+            const raw = localStorage.getItem('mq_playlist_cache');
+            if (!raw) return null;
+            const obj = JSON.parse(raw);
+            // 配置指纹校验：歌单 ID/类型变更后旧缓存自动失效
+            if (!obj || obj.fp !== this._playlistFingerprint() ||
+                !Array.isArray(obj.data) || typeof obj.at !== 'number') return null;
+            return obj;
+        } catch { return null; }
+    }
+
+    _writePlaylistCache(data) {
+        try {
+            localStorage.setItem('mq_playlist_cache', JSON.stringify({
+                at: Date.now(), fp: this._playlistFingerprint(), data,
+            }));
+        } catch { /* 存储满等异常，忽略（缓存仅是加速手段） */ }
+    }
+
+    _playlistFingerprint() {
+        return (typeof userServer !== 'undefined' ? userServer : 'netease') + ':' +
+               (typeof userType !== 'undefined' ? userType : 'playlist') + ':' +
+               (typeof userId !== 'undefined' ? userId : '12675886878');
     }
     
     async loadTrack(index, autoPlay = false) {
@@ -484,9 +582,6 @@ class MusicPlayer {
         if (loadId !== this._loadId) return;
         this.els.coverArt.src = coverUrl;
         this.els.bgCover.style.backgroundImage = `url(${coverUrl})`;
-
-        // 缓存封面 URL 供列表缩略图使用
-        this.coverUrlCache.set(this.currentIndex, coverUrl);
 
         // 更新当前播放项的缩略图
         const currentCoverImg = document.querySelector(`.queue-item[data-idx="${this.currentIndex}"] .queue-item-cover`);
@@ -562,91 +657,77 @@ class MusicPlayer {
         }
     }
     
-    // 批量解析封面 URL（控制并发数=5，避免 API 限流）
-    async resolveAllCovers() {
-        const CONCURRENCY = 5;
-        for (let i = 0; i < this.playlist.length; i += CONCURRENCY) {
-            const batch = this.playlist.slice(i, i + CONCURRENCY);
-            await Promise.all(batch.map((track, batchIdx) => {
-                const idx = i + batchIdx;
-                return this.resolveCover(track, idx);
-            }));
-        }
-        console.log('封面解析完成，缓存', this.coverUrlCache.size, '条');
-    }
-    
-    async resolveCover(track, idx) {
-        const picUrl = track.pic || track.cover || '';
-        if (!picUrl) return;
-        
-        // 检测是否为代理 URL（自建 Meting API 或第三方），需要预解析真实地址
-        const isProxy = picUrl.includes('type=pic') || picUrl.includes('?server=') || picUrl.includes('?source=') || picUrl.includes('/meting/') || picUrl.includes('/api.php');
-        const isNeteaseCDN = picUrl.includes('music.126.net') || picUrl.includes('.126.net');
-        
-        let finalUrl = picUrl;
-        if (isProxy || isNeteaseCDN) {
+    // 列表缩略图 URL（44px 容器）：本地计算，零网络请求
+    // meting pic URL 自带 src 参数（编码后的真实封面地址），解码即得，
+    // 替代原先对每首歌 fetch 解析 302 的 N+1 方案（300 首歌 = 300 个请求）
+    _thumbUrlFor(track) {
+        let url = track.pic || track.cover || '';
+        if (!url) return '';
+        if (url.includes('type=pic')) {
             try {
-                const controller = new AbortController();
-                const timer = setTimeout(() => controller.abort(), 8000);
-                const resp = await fetch(picUrl, {
-                    redirect: 'follow',
-                    referrerPolicy: 'no-referrer',
-                    signal: controller.signal
-                });
-                clearTimeout(timer);
-                finalUrl = resp.url || picUrl;
-            } catch (e) {
-                // 解析失败，保留原始 URL —— <img> 上的 referrerpolicy="no-referrer" 作为兜底
-            }
+                const src = new URL(url).searchParams.get('src');
+                if (src) url = src;
+            } catch { /* 非 URL 格式，原样使用 */ }
         }
-        
-        this.coverUrlCache.set(idx, finalUrl);
-        
-        // 实时更新已渲染的列表缩略图（如果 DOM 已存在）
-        const coverImg = document.querySelector(`.queue-item[data-idx="${idx}"] .queue-item-cover`);
-        if (coverImg) {
-            coverImg.src = finalUrl;
-            coverImg.style.opacity = '1';
-            coverImg.style.display = '';
+        // 网易云 CDN 附加小尺寸参数，避免缩略图加载原图
+        if (url.startsWith('http://')) url = 'https://' + url.slice(7);
+        if (/\.126\.net\//.test(url)) {
+            const p = 'param=150y150';
+            url = /([?&])param=\d+[xy]\d+/i.test(url)
+                ? url.replace(/([?&])param=\d+[xy]\d+/i, '$1' + p)
+                : url + (url.includes('?') ? '&' : '?') + p;
         }
+        return url;
     }
-    
+
     async getHighQualityCover(url) {
         if (!url || url.includes('cover.webp')) return './img/cover.webp';
-        
+
         // 检查缓存
         if (this.coverCache.has(url)) {
             return this.coverCache.get(url);
         }
-        
+
         let finalUrl = url;
-        
-        // 如果是 Meting API 代理 URL，获取真实 URL
-        if (url.includes('type=pic') || url.includes('?server=') || url.includes('?source=') || url.includes('/meting/') || url.includes('/api.php')) {
+
+        // 快路径：meting pic URL 自带 src 参数（真实封面地址），本地解码，零网络请求
+        if (url.includes('type=pic')) {
             try {
-                // 用 AbortController 设置 5 秒超时
+                const src = new URL(url).searchParams.get('src');
+                if (src) finalUrl = src;
+            } catch { /* 解析失败走慢路径 */ }
+        }
+
+        // 慢路径：无 src 参数的 meting pic URL 或其他代理形式，fetch 跟随 302 解析真实地址
+        if (finalUrl === url && (url.includes('type=pic') || url.includes('?server=') || url.includes('?source=') || url.includes('/meting/') || url.includes('/api.php'))) {
+            try {
                 const controller = new AbortController();
                 const timer = setTimeout(() => controller.abort(), 5000);
-                const resp = await fetch(url, { 
+                const resp = await fetch(url, {
                     redirect: 'follow',
                     signal: controller.signal,
                     referrerPolicy: 'no-referrer'
                 });
                 clearTimeout(timer);
+                // 只需要最终地址：取消响应体，释放连接
+                if (resp.body) resp.body.cancel().catch(() => {});
                 finalUrl = resp.url || url;
             } catch (e) {
                 console.warn('获取封面URL失败，使用原始URL:', e.message);
                 finalUrl = url;
             }
         }
-        
-        // 替换网易云图片参数为高清
+
+        // https 升级（网易云 CDN 支持），避免混合内容
+        if (finalUrl.startsWith('http://')) finalUrl = 'https://' + finalUrl.slice(7);
+
+        // 替换网易云图片参数为高清（主封面 + 背景共用）
         if (/param=\d+[xy]\d+/i.test(finalUrl)) {
             finalUrl = finalUrl.replace(/param=\d+[xy]\d+/gi, 'param=800y800');
-        } else if (/music\.126\.net|p\d+\.music\.126\.net|\.126\.net/.test(finalUrl)) {
+        } else if (/\.126\.net\//.test(finalUrl)) {
             finalUrl += (finalUrl.includes('?') ? '&' : '?') + 'param=800y800';
         }
-        
+
         this.coverCache.set(url, finalUrl);
         return finalUrl;
     }
@@ -772,22 +853,17 @@ class MusicPlayer {
             const wordCls = item.isWord ? ' word-by-word' : '';
             return `<p class="${cls}${wordCls}" data-time="${item.time}" data-idx="${idx}">${this.escapeHtml(item.text)}</p>`;
         }).join('');
-        
+
         this.els.lyricsContainer.innerHTML = html;
         this.els.mobileLyricsContainer.innerHTML = html;
 
-        // 绑定点击事件
-        // 桌面端歌词点击
-        this.els.lyricsContainer.querySelectorAll('.lyric-line').forEach(el => {
-            el.onclick = () => this.seekToLyric(parseFloat(el.dataset.time));
-        });
-
-        // 移动端歌词点击（#mobile-lyrics-container 位于 #mobile-lyrics-scroll 内，绑定一次即可，避免重复触发）
-        this.els.mobileLyricsContainer.querySelectorAll('.lyric-line').forEach(el => {
-            el.onclick = () => this.seekToLyric(parseFloat(el.dataset.time));
-        });
+        // 缓存行节点数组：updateLyrics 每 250ms 触发一次，
+        // 避免每次 querySelectorAll 全量查询两个容器（数百行 × 4 次/秒）
+        // 点击跳转由 bindEvents 中的事件委托处理，无需逐行绑定
+        this._desktopLyricLines = Array.from(this.els.lyricsContainer.querySelectorAll('.lyric-line'));
+        this._mobileLyricLines = Array.from(this.els.mobileLyricsContainer.querySelectorAll('.lyric-line'));
     }
-    
+
     updateLyrics(time) {
         if (this.lyrics.length === 0 || this.isLyricScrolling) return;
 
@@ -807,8 +883,8 @@ class MusicPlayer {
         const prevIndex = this.currentLyricIndex;
         this.currentLyricIndex = newIndex;
 
-        // 桌面端
-        const desktopLines = this.els.lyricsContainer.querySelectorAll('.lyric-line');
+        // 桌面端（使用渲染时缓存的行节点数组）
+        const desktopLines = this._desktopLyricLines || [];
         if (desktopLines[newIndex]) desktopLines[newIndex].classList.add('active');
         if (prevIndex >= 0 && desktopLines[prevIndex]) desktopLines[prevIndex].classList.remove('active');
 
@@ -820,14 +896,11 @@ class MusicPlayer {
         // 移动端（仅在可见时更新 DOM）
         const mobileLyricsView = this.els.mobileLyricsView;
         if (mobileLyricsView && mobileLyricsView.classList.contains('active')) {
-            const mobileLines = this.els.mobileLyricsContainer.querySelectorAll('.lyric-line');
+            const mobileLines = this._mobileLyricLines || [];
             if (mobileLines[newIndex]) mobileLines[newIndex].classList.add('active');
             if (prevIndex >= 0 && mobileLines[prevIndex]) mobileLines[prevIndex].classList.remove('active');
-
-            const mobileActiveLine = mobileLines[newIndex];
-            const mobileScroll = document.getElementById('mobile-lyrics-scroll');
-            if (mobileActiveLine && mobileScroll) {
-                mobileActiveLine.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            if (mobileLines[newIndex]) {
+                mobileLines[newIndex].scrollIntoView({ behavior: 'smooth', block: 'center' });
             }
         }
     }
@@ -1029,16 +1102,7 @@ class MusicPlayer {
         // 切换时文字提示当前模式，避免只看图标产生误解
         this.showToast('已切换：' + titles[modes.indexOf(this.playMode)], 'info', 1800);
     }
-    
-    // 兼容旧方法
-    toggleShuffle() {
-        this.togglePlayMode();
-    }
-    
-    toggleRepeat() {
-        this.togglePlayMode();
-    }
-    
+
     handleEnded() {
         if (this.playMode === 'repeat-one') {
             this.els.audio.currentTime = 0;
@@ -1651,7 +1715,6 @@ class MusicPlayer {
                     let cdnUrl = data.url;
                     // 升级 HTTPS（CDN 支持 CORS + HTTPS，避免混合内容拦截）
                     if (cdnUrl.startsWith('http://')) cdnUrl = 'https://' + cdnUrl.slice(7);
-                    console.log('方案A(Worker)解析CDN:', cdnUrl);
                     const blob = await this._fetchAudioBlob(cdnUrl);
                     const blobUrl = URL.createObjectURL(blob);
                     this._blobUrlCache.set(url, blobUrl);
@@ -1681,7 +1744,6 @@ class MusicPlayer {
                 if (contentType.startsWith('audio/') || contentType.startsWith('application/') || contentType.startsWith('video/')) {
                     const blob = await response.blob();
                     if (blob.size >= 1024) {
-                        console.log('方案B(浏览器直连)成功, finalUrl:', response.url.slice(0, 60));
                         const blobUrl = URL.createObjectURL(blob);
                         this._blobUrlCache.set(url, blobUrl);
                         this._cleanupBlobUrlCache();
@@ -1770,86 +1832,50 @@ class MusicPlayer {
     }
 
     // ========== 播放列表 ==========
-    
+
+    _queueItemHtml(track, idx) {
+        // 缩略图 URL 本地计算（零网络请求，见 _thumbUrlFor）
+        const coverUrl = this._thumbUrlFor(track);
+        return `
+        <div class="queue-item" data-idx="${idx}">
+            <span class="queue-item-index">${(idx + 1).toString().padStart(2, '0')}</span>
+            <div class="queue-item-cover-wrap" style="background: linear-gradient(135deg, #3a3a3a 0%, #2a2a2a 100%);">
+                <img class="queue-item-cover" src="${this.escapeHtml(coverUrl)}" alt="" referrerpolicy="no-referrer" onload="this.style.opacity=1;this.style.display=''" onerror="this.style.opacity='0'">
+                <span class="queue-item-cover-placeholder">♪</span>
+            </div>
+            <div class="queue-item-info">
+                <span class="queue-item-title">${this.escapeHtml(track.name || track.title || '')}</span>
+                <span class="queue-item-artist">${this.escapeHtml(track.artist || track.author || '')}</span>
+            </div>
+        </div>`;
+    }
+
     renderQueue() {
-        // 歌单重建（初始加载/搜索加歌），洗牌队列版本失效，下次抽取时自动重建
+        // 歌单重建（初始加载/后台刷新），洗牌队列版本失效，下次抽取时自动重建
         this._playlistVersion++;
         this.els.queueCount.textContent = this.playlist.length + ' 首歌曲';
-        
-        const html = this.playlist.map((track, idx) => {
-            // 优先使用缓存的封面 URL（已解析的真实 URL）
-            let coverUrl = this.coverUrlCache.get(idx) || track.pic || track.cover || '';
-            // 使用渐变背景作为占位，更优雅
-            const placeholderStyle = `background: linear-gradient(135deg, #3a3a3a 0%, #2a2a2a 100%);`;
-            return `
-            <div class="queue-item" data-idx="${idx}">
-                <span class="queue-item-index">${(idx + 1).toString().padStart(2, '0')}</span>
-                <div class="queue-item-cover-wrap" style="${placeholderStyle}">
-                    <img class="queue-item-cover" src="${coverUrl}" alt="" referrerpolicy="no-referrer" onload="this.style.opacity=1;this.style.display=''" onerror="this.style.opacity='0'">
-                    <span class="queue-item-cover-placeholder">♪</span>
-                </div>
-                <div class="queue-item-info">
-                    <span class="queue-item-title">${this.escapeHtml(track.name || track.title || '')}</span>
-                    <span class="queue-item-artist">${this.escapeHtml(track.artist || track.author || '')}</span>
-                </div>
-            </div>
-        `}).join('');
-        
-        // 桌面端列表
-        this.els.queueList.innerHTML = html;
-        this.els.queueList.querySelectorAll('.queue-item').forEach(el => {
-            el.onclick = async () => {
-                try {
-                    const idx = parseInt(el.dataset.idx);
-                    this._removeFromQueue(idx);   // 点播后从本轮队列移除，避免同轮重复
-                    await this.loadTrack(idx, true);
-                } catch (e) {
-                    console.error('加载歌曲失败:', e);
-                }
-            };
-        });
 
-        // 移动端列表
+        const html = this.playlist.map((track, idx) => this._queueItemHtml(track, idx)).join('');
+        // 点击处理由 bindEvents 中的事件委托完成，无需逐项绑定
+        this.els.queueList.innerHTML = html;
         if (this.els.mobileQueueList) {
             this.els.mobileQueueList.innerHTML = html;
-            this.els.mobileQueueList.querySelectorAll('.queue-item').forEach(el => {
-                el.onclick = async () => {
-                    try {
-                        const idx = parseInt(el.dataset.idx);
-                        this._removeFromQueue(idx);
-                        await this.loadTrack(idx, true);
-                        this.closeMobileQueue();
-                    } catch (e) {
-                        console.error('加载歌曲失败:', e);
-                    }
-                };
-            });
         }
-        
+
         this.updateQueueHighlight();
     }
-    
+
     updateQueueHighlight() {
-        // 桌面端：只更新新旧 active 状态
-        const desktopItems = this.els.queueList.querySelectorAll('.queue-item');
-        desktopItems.forEach((el, idx) => {
-            if (idx === this.currentIndex) {
-                el.classList.add('active');
-            } else if (el.classList.contains('active')) {
-                el.classList.remove('active');
-            }
-        });
-        // 移动端
-        if (this.els.mobileQueueList) {
-            const mobileItems = this.els.mobileQueueList.querySelectorAll('.queue-item');
-            mobileItems.forEach((el, idx) => {
-                if (idx === this.currentIndex) {
-                    el.classList.add('active');
-                } else if (el.classList.contains('active')) {
-                    el.classList.remove('active');
-                }
-            });
+        // O(1)：只操作新旧 active 元素（原先每次切歌遍历全部列表项）
+        const pick = list => list ? list.querySelector(`.queue-item[data-idx="${this.currentIndex}"]`) : null;
+        const dNew = pick(this.els.queueList);
+        const mNew = pick(this.els.mobileQueueList);
+        for (const el of this._activeQueueEls) {
+            if (el !== dNew && el !== mNew) el.classList.remove('active');
         }
+        if (dNew) dNew.classList.add('active');
+        if (mNew) mNew.classList.add('active');
+        this._activeQueueEls = [dNew, mNew].filter(Boolean);
     }
     
     filterQueue(keyword) {
@@ -1893,8 +1919,6 @@ class MusicPlayer {
         for (let attempt = 0; attempt < endpoints.length; attempt++) {
             try {
                 const url = endpoints[attempt];
-                console.log(`搜索 (第${attempt + 1}次):`, url);
-
                 const controller = new AbortController();
                 const timer = setTimeout(() => controller.abort(), 10000);
                 const resp = await fetch(url, { signal: controller.signal });
@@ -2085,7 +2109,15 @@ class MusicPlayer {
             this.playPath.push(newIndex);
             this.pathPos = this.playPath.length - 1;
             this._capPlayPath();
-            this.renderQueue();
+            // 增量追加到列表（避免 300+ 项全量重建 DOM）；歌单变动，洗牌队列下轮重建
+            this._playlistVersion++;
+            const itemHtml = this._queueItemHtml(newTrack, newIndex);
+            this.els.queueList.insertAdjacentHTML('beforeend', itemHtml);
+            if (this.els.mobileQueueList) {
+                this.els.mobileQueueList.insertAdjacentHTML('beforeend', itemHtml);
+            }
+            this.els.queueCount.textContent = this.playlist.length + ' 首歌曲';
+            this.updateQueueHighlight();
             this.loadTrack(newIndex, true);
             if (window.innerWidth > 768) this.switchPanel('queue');
         } catch (e) {

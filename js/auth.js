@@ -183,6 +183,7 @@ class AuthModule {
         // - 防止本地旧数据在下次全量 PUT 时把云端更高计数覆盖回去
         if (this.isLoggedIn()) {
             this.fetchPlayCounts().then(remote => {
+                this.stats._lastRemoteMergeAt = Date.now();
                 if (this.stats.mergeMax(remote) && this.player) {
                     // 云端有更新：作废已构建的洗牌队列，下首歌起用最新计数重建
                     this.player._shuffleVersion = -1;
@@ -256,6 +257,7 @@ class AuthModule {
         try {
             const remote = await this.fetchPlayCounts();
             this.stats.mergeMax(remote);
+            this.stats._lastRemoteMergeAt = Date.now();
             // 登录场景强制全量同步一次（不受 _dirty 限制，把合并结果落库）
             await this.putPlayCounts(this.stats.exportAll());
             this.stats._dirty = false;
@@ -272,6 +274,7 @@ class AuthModule {
         try {
             const remote = await this.fetchPlayCounts();
             this.stats.mergeMax(remote);
+            this.stats._lastRemoteMergeAt = Date.now();
             await this.putPlayCounts(this.stats.exportAll());
             this.stats._dirty = false;
             this._setMsg('同步完成 (' + new Date().toLocaleTimeString() + ')');

@@ -13,6 +13,7 @@ class PlayStats {
         this._syncTimer = null;
         this._dirty = false;           // 有未上报的本地变更
         this._syncing = false;         // 上报串行锁（防并发 PUT 乱序）
+        this._lastRemoteMergeAt = 0;   // 上次成功 GET 云端合并的时间（短窗口内跳过重复 GET）
         this._load();
     }
 
@@ -97,17 +98,22 @@ class PlayStats {
 
     // 全量上报（幂等，失败下次重试）
     // 上报前先拉云端 mergeMax：PUT 是全量替换，若别台设备上报过更高计数，
-    // 直接 PUT 本地旧值会把它覆盖回去
+    // 直接 PUT 本地旧值会把它覆盖回去。
+    // 60 秒内已合并过则跳过 GET（省一半请求；多设备 60 秒窗口内并发上报的
+    // 差异概率极低且后果轻微，权衡后接受）
     async flush() {
         if (!this.auth || !this.auth.isLoggedIn() || !this._dirty) return;
         if (this._syncing) { this._scheduleSync(); return; }   // 已有上报进行中，稍后重试
         this._syncing = true;
         clearTimeout(this._syncTimer);
         try {
-            try {
-                const remote = await this.auth.fetchPlayCounts();
-                this.mergeMax(remote);
-            } catch { /* 云端拉取失败也要尽力上报本地数据 */ }
+            if (Date.now() - this._lastRemoteMergeAt > 60000) {
+                try {
+                    const remote = await this.auth.fetchPlayCounts();
+                    this.mergeMax(remote);
+                } catch { /* 云端拉取失败也要尽力上报本地数据 */ }
+                this._lastRemoteMergeAt = Date.now();
+            }
             const ok = await this.auth.putPlayCounts(this.counts);
             if (ok) this._dirty = false;
         } catch { /* 网络异常，下次再试 */ }
