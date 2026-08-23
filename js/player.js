@@ -1006,23 +1006,28 @@ class MusicPlayer {
     }
     
     // 统一的播放模式切换（顺序 -> 随机 -> 单曲循环 -> 顺序）
+    // 图标为内联 SVG（index.html 中三个，按模式切换显示），跟随主流播放器认知：
+    //   顺序播放 →|（播完一轮）  随机播放 交叉双箭头  单曲循环 循环箭头+1
     togglePlayMode() {
         const modes = ['loop', 'shuffle', 'repeat-one'];
-        const icons = ['fa-arrow-right-arrow-left', 'fa-shuffle', 'fa-repeat'];
         const titles = ['顺序播放', '随机播放', '单曲循环'];
-        
+
         const idx = modes.indexOf(this.playMode);
         this.playMode = modes[(idx + 1) % modes.length];
-        
+
         // 更新按钮状态
         if (this.els.btnMode) {
             this.els.btnMode.classList.toggle('active', this.playMode !== 'loop');
-            const icon = this.els.btnMode.querySelector('i');
-            if (icon) {
-                icon.className = 'fas ' + icons[modes.indexOf(this.playMode)];
-            }
-            this.els.btnMode.title = titles[modes.indexOf(this.playMode)];
+            const modeIdx = modes.indexOf(this.playMode);
+            modes.forEach(m => {
+                const svg = document.getElementById('mode-icon-' + m);
+                if (svg) svg.style.display = (m === this.playMode) ? '' : 'none';
+            });
+            this.els.btnMode.title = titles[modeIdx];
         }
+
+        // 切换时文字提示当前模式，避免只看图标产生误解
+        this.showToast('已切换：' + titles[modes.indexOf(this.playMode)], 'info', 1800);
     }
     
     // 兼容旧方法
