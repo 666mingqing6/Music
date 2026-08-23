@@ -32,6 +32,9 @@ class MusicPlayer {
         this._loadId = 0;
         this._lyricLoadId = 0;
 
+        // 首屏遮罩是否已揭开（歌单/首曲信息/封面地址就绪后才揭开，只揭一次）
+        this._revealed = false;
+
         // 播放统计（song_key 稳定计数 + 云同步）与账户模块
         // API 基地址统一从 config.js 的 metingApiBase 读取（全站唯一配置入口）
         this.apiBase = (typeof metingApiBase !== 'undefined') ? metingApiBase : 'https://meting-api.646474.xyz';
@@ -79,13 +82,8 @@ class MusicPlayer {
         this.initVolume();
         this.auth.initUI(this);
 
-        // 先立即隐藏加载遮罩，不等数据加载
-        setTimeout(() => {
-            if (this.els.loadingOverlay) {
-                this.els.loadingOverlay.classList.add('hidden');
-            }
-        }, 300);
-
+        // 加载遮罩不在此处隐藏：由 loadTrack 在歌单/首曲信息/封面图真正加载完成后揭开
+        // （index.html 的 10 秒兜底仅在 player.js 异常时强制隐藏）
         try {
             await this.loadPlaylist();
             // 旧版以列表索引存的播放计数迁移到 song_key（歌单变动也不丢）
@@ -97,6 +95,8 @@ class MusicPlayer {
                 this.playPath = [firstIdx];
                 this.pathPos = 0;
                 this.loadTrack(firstIdx, true);
+            } else {
+                this._revealOnce();   // 空歌单：无曲可等，直接揭开
             }
             // 封面解析延迟到浏览器空闲时执行，避免与首曲音频加载竞争网络/主线程
             // 导致"打开后要点播放但需等封面解析完才能播"的卡顿
@@ -108,6 +108,16 @@ class MusicPlayer {
             }
         } catch (error) {
             console.error('初始化失败:', error);
+            this._revealOnce();   // 初始化失败也要揭开页面，避免卡在转圈（配合 10 秒兜底）
+        }
+    }
+
+    // 揭开首屏加载遮罩（幂等，只揭一次）
+    _revealOnce() {
+        if (this._revealed) return;
+        this._revealed = true;
+        if (this.els.loadingOverlay && !this.els.loadingOverlay.classList.contains('hidden')) {
+            this.els.loadingOverlay.classList.add('hidden');
         }
     }
     
@@ -444,7 +454,10 @@ class MusicPlayer {
     
     async loadTrack(index, autoPlay = false) {
         // 严格校验索引：过滤 undefined/NaN 等非法值（_getLeastPlayedIndex 在极端情况下可能返回 -1/undefined）
-        if (!Number.isInteger(index) || index < 0 || index >= this.playlist.length) return;
+        if (!Number.isInteger(index) || index < 0 || index >= this.playlist.length) {
+            this._revealOnce();   // 首屏兜底：首曲索引非法时不能让遮罩一直转
+            return;
+        }
 
         // 取消尚未触发的错误自动跳过（避免与新加载产生竞态）
         if (this._errorSkipTimer) {
@@ -531,6 +544,18 @@ class MusicPlayer {
         // 重置歌词滚动
         this.currentLyricIndex = -1;
         this.els.lyricsScroll.scrollTop = 0;
+
+        // 首屏揭开时机：歌曲信息/音频/歌词已就绪，再等封面图真正加载完成
+        // （load 事件，而非仅设置 src），避免"遮罩撤了、封面还在转"的二次加载感
+        if (!this._revealed) {
+            const img = this.els.coverArt;
+            if (img.complete) {
+                this._revealOnce();
+            } else {
+                img.addEventListener('load', () => this._revealOnce(), { once: true });
+                img.addEventListener('error', () => this._revealOnce(), { once: true });
+            }
+        }
 
         if (autoPlay) {
             this.play();

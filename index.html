@@ -69,12 +69,15 @@
                     </button>
                     <div id="volume-control" class="control-btn-wrap">
                         <button id="btn-volume" class="control-btn" title="音量">
-                            <svg id="volume-icon" viewBox="0 0 24 24" width="22" height="22">
-                                <path class="volume-speaker" d="M3 9v6h4l5 5V4L7 9H3z" fill="currentColor"/>
-                                <path class="volume-wave wave-1" d="M12 8.5a3.5 3.5 0 0 1 0 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                                <path class="volume-wave wave-2" d="M14.5 6a7 7 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                                <path class="volume-wave wave-3" d="M17 3.5a11 11 0 0 1 0 17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                                <line class="volume-mute-line" x1="22" y1="2" x2="2" y2="22" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                            <svg id="volume-icon" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <!-- 喇叭本体（Tabler volume，所有状态共用） -->
+                                <path d="M6 15H4a1 1 0 0 1-1-1v-4a1 1 0 0 1 1-1h2l3.5-4.5A.8.8 0 0 1 11 5v14a.8.8 0 0 1-1.5.5z"/>
+                                <!-- 三层声波：同心圆弧逐层外扩（最外层凸点 x=22，均在画布内） -->
+                                <path class="volume-wave wave-1" d="M13.5 9.5a3.5 3.5 0 0 1 0 5"/>
+                                <path class="volume-wave wave-2" d="M15.5 7a6 6 0 0 1 0 10"/>
+                                <path class="volume-wave wave-3" d="M17.5 4.5a8.5 8.5 0 0 1 0 15"/>
+                                <!-- 静音叉（Tabler volume-3 的 X，位于声波区域，不与喇叭重叠） -->
+                                <path class="volume-mute-x" d="M16 10l4 4m0-4l-4 4"/>
                             </svg>
                         </button>
                         <div id="volume-slider-wrap">
@@ -311,11 +314,14 @@
 
     <script src="./config.js"></script>
     <script>
-        // 无论 player.js 是否加载成功，2秒后强制隐藏加载遮罩
+        // 加载遮罩兜底：正常流程下由 player.js 在歌单/首曲/封面就绪后揭开；
+        // 仅当 player.js 加载失败或初始化异常（10 秒仍未就绪）时强制隐藏，避免永远转圈
         setTimeout(function() {
-            var overlay = document.getElementById('loading-overlay');
-            if (overlay) overlay.classList.add('hidden');
-        }, 1500);
+            if (!(window.player && window.player._revealed)) {
+                var overlay = document.getElementById('loading-overlay');
+                if (overlay) overlay.classList.add('hidden');
+            }
+        }, 10000);
     </script>
     <script src="./js/playstats.js"></script>
     <script src="./js/auth.js"></script>
