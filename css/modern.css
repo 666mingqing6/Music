@@ -76,6 +76,11 @@ html {
     -webkit-tap-highlight-color: transparent;
 }
 
+html, body {
+    /* 禁止页面级滚动回弹（iOS 橡皮筋）：滚动只发生在内部容器中 */
+    overscroll-behavior: none;
+}
+
 body {
     font-family: var(--font-sans);
     background: var(--color-bg);
@@ -84,6 +89,23 @@ body {
     overflow: hidden;
     height: 100vh;
     height: 100dvh;
+}
+
+/* ========== 滚动容器统一约束（移动端触摸方向锁定） ==========
+   touch-action: pan-y            浏览器只处理纵向平移手势，横向/斜向手势不触发滚动
+   overscroll-behavior: contain   滚到边界不穿透到页面（阻止整页被拖动）
+   overflow-x: hidden             显式关闭横向滚动空间
+*/
+#effect-popup,
+#lyrics-scroll,
+#queue-list,
+#search-results,
+#mobile-lyrics-scroll,
+#mobile-queue-list,
+#mobile-search-results {
+    touch-action: pan-y;
+    overscroll-behavior: contain;
+    overflow-x: hidden;
 }
 
 button {
