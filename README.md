@@ -29,7 +29,21 @@
 
 后端 API（独立仓库）：[666mingqing6/meting-api](https://github.com/666mingqing6/meting-api)
 - 音乐数据：`?type=playlist|song|url|pic|lrc|search`（网易云 weapi 直连 + 代理回退解决 525 封锁）
-- 账户：`/auth/register|login|logout` + `/user/playcounts`（D1 存储，PBKDF2 密码哈希 + 登录限流）
+- 账户：`/auth/register|login|logout` + `/user/playcounts`（GET 拉取）+ `/user/playcounts/merge`（增量上报）
+  （D1 存储，PBKDF2 密码哈希 + 登录限流）
+
+## 播放记录同步策略（省云写入配额）
+
+云端按**写入行数**计费，写是瓶颈、读几乎用不完。本项目采用「增量上报 + 写入节流」：
+
+1. **增量上报**：只把发生变化的 key 发给 `/user/playcounts/merge`，服务端 `UPSERT` 取 `MAX`。
+   一次同步写 1~3 行，而非全量替换的约 600 行（**约 600 倍降幅**）。
+2. **写入节流**：30 秒防抖 + 60 秒最小间隔 + 3 分钟最长等待保底（参数见 `config.js`）。
+3. **延迟计数**：`countPlayAfterSec`（默认 20 秒）——实际播放满 20 秒才计入播放次数，
+   快速切歌/试听不计入。
+4. **不丢数据**：待上报项（`mq_play_pending_v2`）持久化到 localStorage，硬崩溃/强杀后
+   下次开页自动补传；关页由 `pagehide` + `keepalive` 兜底。
+5. **降级保护**：后端未部署 merge 接口时自动回退全量 PUT，同步不会静默失效。
 
 ## 配置（config.js）
 

@@ -15,6 +15,26 @@ var metingApiBase = "https://meting-api.646474.xyz";
 var shufflePrior = 4;
 var shuffleAlpha = 1;
 
+// ===== 播放记录同步策略（云写入配额友好配置）=====
+// 背景：云端按"写入行数"计费，写是瓶颈（读几乎用不完）。本地 localStorage 始终
+// 实时保存计数，下面这些参数只影响"多久把变化推到云端"，不影响数据完整性
+// （未上报项会持久化，下次开页自动补传）。
+
+// 播放满多少秒才计入播放次数；0 = 一加载就计数。
+// 提高该值可过滤"快速切歌/试听"，直接减少计数变更条数与写入次数。建议 15~30
+var countPlayAfterSec = 20;
+
+// 云端写入节流三参数（登录后生效）
+// syncDebounceMs   ：最后一次播放变更后静默这么久再上报（连续切歌合并为一次请求）
+// syncMinIntervalMs：两次云端写入的最小间隔（硬性限流，防止高频刷写）
+// syncMaxWaitMs    ：自首次变更起最长等待，超过则强制上报（长会话保底）
+var syncDebounceMs = 30000;      // 30 秒
+var syncMinIntervalMs = 60000;   // 60 秒
+var syncMaxWaitMs = 180000;      // 3 分钟
+
+// 单次上报的最大 key 数（超出自动分片；仅首次登录上传大量本地历史时会用到）
+var syncMaxKeysPerReq = 300;
+
 // 本地音乐配置
 var localMusic = [
   {

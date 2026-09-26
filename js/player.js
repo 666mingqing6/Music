@@ -44,6 +44,10 @@ class MusicPlayer {
         this._playlistVersion = 0;   // 歌单每次重建（renderQueue）递增
         this._shuffleVersion = -1;   // 队列构建时的歌单版本，不一致则重建
 
+        // 播放计数延迟生效（当前曲 key / 已计数曲 key）
+        this._countKey = '';
+        this._countedKey = '';
+
         // 错误自动恢复：连续出错计数 + 跳过定时器
         this._consecutiveErrors = 0;
         this._errorSkipTimer = null;
@@ -591,7 +595,9 @@ class MusicPlayer {
         }
 
         // 记录播放次数（加权洗牌用，song_key 稳定标识，登录后自动同步云端）
-        this.stats.increment(PlayStats.keyFor(track));
+        // 延迟计数：实际播放满 countPlayAfterSec 秒才 +1（见 _maybeCountPlay）
+        // 快速切歌/试听不计入，可显著减少计数变更条数与云端写入频率
+        this._armPlayCount(track);
 
         // 播放状态
         this.els.coverContainer.classList.toggle('playing', false);
@@ -995,12 +1001,12 @@ class MusicPlayer {
                 for (const idxStr in old) {
                     const track = this.playlist[parseInt(idxStr)];
                     if (track) {
-                        const key = PlayStats.keyFor(track);
-                        const v = old[idxStr] | 0;
-                        if (v > (this.stats.counts[key] || 0)) this.stats.counts[key] = v;
+                        // 迁移进来的计数同样标记为待上报（登录后增量上云）
+                        this.stats.importLocal(PlayStats.keyFor(track), old[idxStr] | 0);
                     }
                 }
                 this.stats._save();
+                this.stats._savePending();
             }
             localStorage.setItem('mq_play_count_migrated', '1');
         } catch { /* ignore */ }
@@ -1180,8 +1186,37 @@ class MusicPlayer {
     
     // ========== 进度控制 ==========
     
+    // 计数阈值（秒）：实际播放满该秒数才计入播放次数；0 = 一加载就计数
+    // 作用：快速切歌、试听后立刻跳过不计入，减少计数变更条数 → 减少云端写入
+    _countThresholdSec() {
+        const v = (typeof countPlayAfterSec === 'number') ? countPlayAfterSec : 20;
+        return v > 0 ? v : 0;
+    }
+
+    // 切歌时挂起计数：阈值 0 直接计数，否则等播放进度到点后由 _maybeCountPlay 计数
+    _armPlayCount(track) {
+        const key = PlayStats.keyFor(track);
+        this._countKey = key;
+        this._countedKey = '';
+        if (!key) return;
+        if (this._countThresholdSec() === 0) {
+            this._countedKey = key;
+            this.stats.increment(key);
+        }
+    }
+
+    // 播放进度回调中判定：同一首歌只计一次（onTimeUpdate 约每 250ms 触发）
+    _maybeCountPlay(currentTime) {
+        if (!this._countKey || this._countedKey === this._countKey) return;
+        if (!isFinite(currentTime) || currentTime < this._countThresholdSec()) return;
+        this._countedKey = this._countKey;
+        this.stats.increment(this._countKey);
+    }
+
     updateProgress() {
         const { currentTime, duration } = this.els.audio;
+        // 计数判定放在时长校验之前：直播流/时长未知的音频也能正常计数
+        this._maybeCountPlay(currentTime);
         if (!isFinite(duration) || duration <= 0) return;
         
         const percent = (currentTime / duration) * 100;

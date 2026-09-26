@@ -7,6 +7,7 @@ class AuthModule {
         this.apiBase = apiBase.replace(/\/+$/, '');  // https://meting-api.646474.xyz
         this.token = '';
         this.username = '';
+        this.mergeUnsupported = false;   // 后端无 merge 接口时置位，降级为全量 PUT
         this._loadSession();
         this.els = {};
     }
@@ -92,10 +93,40 @@ class AuthModule {
         return data.counts || {};
     }
 
+    // 增量上报：只发变化项，服务端 UPSERT 取 max（写行数 = 变更 key 数）
+    // 相比 PUT 全量替换（服务端 DELETE 全部 + INSERT 全部，约 2N 行），
+    // 单次同步的写入量下降约两个数量级；且幂等，可安全重试
+    async mergePlayCounts(counts, keepalive = false) {
+        const resp = await fetch(this.apiBase + '/user/playcounts/merge', {
+            method: 'POST',
+            keepalive,   // 关页兜底场景：页面销毁后浏览器仍把请求发完
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer ' + this.token,
+            },
+            body: JSON.stringify({ counts }),
+        });
+        if (resp.status === 401) {
+            this._handleUnauthorized();
+            return false;
+        }
+        // 404 = 后端 Worker 还是旧版本（无 merge 接口）。标记降级，
+        // 由调用方改用全量 PUT，保证同步功能不静默中断
+        if (resp.status === 404) {
+            if (!this.mergeUnsupported) {
+                this.mergeUnsupported = true;
+                console.warn('[auth] 后端未部署 /user/playcounts/merge，已降级为全量 PUT（写入量偏高）。请重新部署 meting-api Worker。');
+            }
+            return false;
+        }
+        return resp.ok;
+    }
+
+    // 全量替换上报（降级路径 / 兼容旧后端；写放大约 2N 行，应尽量避免）
     async putPlayCounts(counts, keepalive = false) {
         const resp = await fetch(this.apiBase + '/user/playcounts', {
             method: 'PUT',
-            keepalive,   // 关页兜底场景：页面销毁后浏览器仍把请求发完
+            keepalive,
             headers: {
                 'Content-Type': 'application/json',
                 'Authorization': 'Bearer ' + this.token,
@@ -165,14 +196,14 @@ class AuthModule {
             this.els.btnLogout.onclick = () => this._doLogout();
         }
 
-        // 页面隐藏时冲刷未上报的计数（完整流程：GET 合并 + PUT）
+        // 页面隐藏时冲刷未上报的计数（走节流规则；真正的关页由 pagehide 兜底）
         document.addEventListener('visibilitychange', () => {
             if (document.visibilityState === 'hidden') {
                 this.stats.flush();
             }
         });
 
-        // 关页兜底：pagehide 时页面即将销毁，用 keepalive 直接 PUT 本地全量
+        // 关页兜底：pagehide 时页面即将销毁，用 keepalive 直接上报待同步项
         // （visibilitychange 在部分移动端浏览器关页时不可靠，双保险）
         window.addEventListener('pagehide', () => {
             this.stats.flushOnExit();
@@ -180,15 +211,14 @@ class AuthModule {
 
         // 已登录开页：后台拉云端计数合并到本地
         // - 开页后的洗牌队列直接用最新计数（别台设备播过的记录立即可见）
-        // - 防止本地旧数据在下次全量 PUT 时把云端更高计数覆盖回去
+        // - 本地领先的差异项（离线期间的播放）会按节流规则增量上推
         if (this.isLoggedIn()) {
-            this.fetchPlayCounts().then(remote => {
-                this.stats._lastRemoteMergeAt = Date.now();
-                if (this.stats.mergeMax(remote) && this.player) {
+            this.stats.syncOnOpen().then(changed => {
+                if (changed && this.player) {
                     // 云端有更新：作废已构建的洗牌队列，下首歌起用最新计数重建
                     this.player._shuffleVersion = -1;
                 }
-            }).catch(() => { /* 拉取失败不阻塞开页，登录/同步时再合并 */ });
+            });
         }
 
         this._renderState();
@@ -250,17 +280,12 @@ class AuthModule {
             return;
         }
 
-        // 登录成功：拉取云端计数并与本地合并（取 max），再全量回传
+        // 登录成功：拉取云端计数与本地合并（取 max），本地领先的差异项增量上推
         this._renderState();
         this._setMsg('');
         this.els.passInput.value = '';
         try {
-            const remote = await this.fetchPlayCounts();
-            this.stats.mergeMax(remote);
-            this.stats._lastRemoteMergeAt = Date.now();
-            // 登录场景强制全量同步一次（不受 _dirty 限制，把合并结果落库）
-            await this.putPlayCounts(this.stats.exportAll());
-            this.stats._dirty = false;
+            await this.stats.syncAll();
             this._setMsg('');
             if (this.player) this.player.showToast('已登录：播放记录已同步', 'info', 2500);
         } catch (e) {
@@ -272,11 +297,7 @@ class AuthModule {
         if (!this.isLoggedIn()) return;
         this._setMsg('同步中...');
         try {
-            const remote = await this.fetchPlayCounts();
-            this.stats.mergeMax(remote);
-            this.stats._lastRemoteMergeAt = Date.now();
-            await this.putPlayCounts(this.stats.exportAll());
-            this.stats._dirty = false;
+            await this.stats.syncAll();
             this._setMsg('同步完成 (' + new Date().toLocaleTimeString() + ')');
             if (this.player) this.player.showToast('播放记录已同步', 'info', 2000);
         } catch (e) {
