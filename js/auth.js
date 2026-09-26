@@ -110,12 +110,16 @@ class AuthModule {
             this._handleUnauthorized();
             return false;
         }
-        // 404 = 后端 Worker 还是旧版本（无 merge 接口）。标记降级，
-        // 由调用方改用全量 PUT，保证同步功能不静默中断
-        if (resp.status === 404) {
+        // 后端未部署 merge 接口时的实际表现（已实测线上旧 Worker）：
+        //   路径未注册 → 落入旧版音乐 API 分支 → 400 "missing or invalid id parameter"
+        //   其他可能 → 404 / 405 / 501
+        // 统一视为"接口不可用"，标记降级，由调用方改用全量 PUT，
+        // 避免同步静默失效（用户侧表现为播放记录不再上云）
+        if (resp.status === 400 || resp.status === 404 || resp.status === 405 || resp.status === 501) {
             if (!this.mergeUnsupported) {
                 this.mergeUnsupported = true;
-                console.warn('[auth] 后端未部署 /user/playcounts/merge，已降级为全量 PUT（写入量偏高）。请重新部署 meting-api Worker。');
+                console.warn('[auth] 后端 /user/playcounts/merge 不可用 (HTTP ' + resp.status +
+                    ')，已降级为全量 PUT（写入量偏高）。请重新部署 meting-api Worker 以启用增量同步。');
             }
             return false;
         }
